@@ -2,6 +2,7 @@
 name = "genio"
 version = "0.1.0"
 authors = ["Martin Habovštiak <martin.habovstiak@gmail.com>"]
+license = "MIT/Apache-2.0"
 readme = "README.md"
 keywords = ["io", "generic", "read", "write"]
 repository = "https://github.com/Kixunil/genio"
