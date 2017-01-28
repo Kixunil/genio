@@ -1,0 +1,12 @@
+[package]
+name = "genio"
+version = "0.1.0"
+authors = ["Martin Habovštiak <martin.habovstiak@gmail.com>"]
+
+[dependencies]
+void = "1"
+
+[features]
+default = ["use_std"]
+
+use_std = []
