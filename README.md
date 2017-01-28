@@ -21,7 +21,7 @@ The aim of `genio` is to enable better exploitation of Rust's type system to sol
 
 Since everything that impls `genio::{Read, Write}` can trivially impl `std::io::{Read, Write}`, it's better to write algorithms just for `genio` and let users wrap them in glue.
 
-Contirbuting
+Contributing
 ------------
 
 This crate is certainly not finished project and it needs more work to perfectly work with `std::io`. It'd also be beneficial to implement additional algorithms, wrappers and tools. Finally, other crates should start using `genio`. I invite everyone to help with this crate, to be as good as it can be.
@@ -60,7 +60,7 @@ Blanket impls
 
 There are intentionally no blanket impls of `genio` traits for `std::io` or vice versa. This is to enable people to implement both traits. If you use `std::io` traits in your crates, you can add support for `genio` without fear. Please, do **not** impl `genio` traits with associated types being `io::Error`. If you don't have time to write full-featured impls, stick to glue wrappers. Don't waste opportunity to implement `genio` the best way!
 
-Discalimer
+Disclaimer
 ----------
 
 I highly appreciate all the hard work Rust developers did to create `std::io`. The `genio` crate isn't meant to bash them, judge them, etc. They likely didn't have enough time to implement something like this or feared it'd be too complicated. The aim of this crate is to improve the world by providing tool for people who want more generic IO.
