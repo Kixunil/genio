@@ -35,14 +35,14 @@ This crate is considered unstable, although mandatory types and methods in `Read
 
 Planned:
 
-[X] Synchronous streams
-[ ] Asynchronous streams
-[ ] Synchronous message streams with known message size (usually in the header of message)
-[ ] Synchronous message streams with unknown size (usually using some delimiter)
-[ ] Asynchronous message streams with known message size (usually in the header of message)
-[ ] Asynchronous message streams with unknown size (usually using some delimiter)
-[ ] Sound impls for primitive types
-[ ] Sound impls for `std::io` types
+- [X] Synchronous streams
+- [ ] Asynchronous streams
+- [ ] Synchronous message streams with known message size (usually in the header of message)
+- [ ] Synchronous message streams with unknown size (usually using some delimiter)
+- [ ] Asynchronous message streams with known message size (usually in the header of message)
+- [ ] Asynchronous message streams with unknown size (usually using some delimiter)
+- [ ] Sound impls for primitive types
+- [ ] Sound impls for `std::io` types
 
 And of course, appropriate combinators for all of them.
 
