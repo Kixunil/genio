@@ -16,6 +16,21 @@ pub trait BufRead: Read {
     fn consume(&mut self, amount: usize);
 }
 
+impl<'a> BufRead for &'a [u8] {
+    fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
+        Ok(*self)
+    }
+
+    fn consume(&mut self, mut amount: usize) {
+        if amount > self.len() {
+            amount = self.len();
+        }
+
+        let buf = *self;
+        *self = &buf[amount..];
+    }
+}
+
 /// When reading from reader, sometimes it's beneficial to read `n` bytes at once. However, BufRead
 /// itself doesn't guarantee that more bytes will be available when calling `fill_buf` multiple
 /// times. This trait provides `fill_progress` and `require_bytes` functions with that guarantee.
