@@ -3,6 +3,7 @@
 use Read;
 use Write;
 use error::BufError;
+use ::void::Void;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
 /// of reading.
@@ -33,17 +34,38 @@ impl<'a> BufRead for &'a [u8] {
 
 /// When reading from reader, sometimes it's beneficial to read `n` bytes at once. However, BufRead
 /// itself doesn't guarantee that more bytes will be available when calling `fill_buf` multiple
-/// times. This trait provides `fill_progress` and `require_bytes` functions with that guarantee.
-pub trait BufReadProgress: Read {
+/// times. This trait provides `fill_progress` function with that guarantee.
+pub trait BufReadProgress: BufRead {
     /// Error that occurs in buffer itself. Most often if buffer is out of memory.
     type BufReadError;
 
     /// Fills the internal buffer guaranteeing that successive calls to this function return more
     /// and more bytes (or an error).
     fn fill_progress(&mut self) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>>;
+}
+
+/// When reading from reader, sometimes it's beneficial to read `n` bytes at once. However, BufRead
+/// itself doesn't guarantee that more bytes will be available when calling `fill_buf` multiple
+///  times. This trait provides `require_bytes` function that allows reading required amount of
+///  bytes.
+pub trait BufReadRequire: BufRead {
+    /// Error that occurs in buffer itself. Most often if buffer is out of memory.
+    type BufReadError;
 
     /// Fill the buffer until at least `amount` bytes are available.
     fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>>;
+}
+
+impl<'a> BufReadRequire for &'a [u8] {
+    type BufReadError = Void;
+
+    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+        if amount <= self.len() {
+            Ok(*self)
+        } else {
+            Err(BufError::End)
+        }
+    }
 }
 
 /// When writing, it might be better to serialize directly into a buffer. This trait allows such
