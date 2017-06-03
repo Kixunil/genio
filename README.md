@@ -43,6 +43,7 @@ Planned:
 - [ ] Asynchronous message streams with unknown size (usually using some delimiter)
 - [ ] Sound impls for primitive types
 - [ ] Sound impls for `std::io` types
+- [ ] Integrate with [partial-io](https://github.com/facebookincubator/rust-partial-io)
 
 And of course, appropriate combinators for all of them.
 
