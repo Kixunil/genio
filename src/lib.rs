@@ -286,3 +286,23 @@ impl<'a> Read for &'a [u8] {
         self.len() >= at_least
     }
 }
+
+impl<'a> Write for &'a mut [u8] {
+    type WriteError = error::BufferOverflow;
+    type FlushError = Void;
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
+        if buf.len() <= self.len() {
+            let (first, second) = ::core::mem::replace(self, &mut []).split_at_mut(buf.len());
+            first.copy_from_slice(&buf[0..buf.len()]);
+            *self = second;
+            Ok(buf.len())
+        } else {
+            Err(error::BufferOverflow)
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), Self::FlushError> {
+        Ok(())
+    }
+}

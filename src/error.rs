@@ -2,6 +2,7 @@
 
 use void::Void;
 use void;
+use ::core::fmt;
 
 /// Specifies an error that happened during I/O operation. This enables one to compose read and
 /// write errors into single type.
@@ -154,4 +155,14 @@ pub enum ExtendError<R, E> {
     ReadErr(R),
     /// The type being extended failed.
     ExtendErr(E),
+}
+
+/// Error indicating that provided buffer was too small
+#[derive(Debug)]
+pub struct BufferOverflow;
+
+impl fmt::Display for BufferOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "provided buffer was too small")
+    }
 }
