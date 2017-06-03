@@ -17,9 +17,9 @@ be better at expressing what kinds of error can happen.
 """
 
 [dependencies]
-void = "1"
+void = { version = "1", default-features = false }
 
 [features]
 default = ["use_std"]
 
-use_std = []
+use_std = ["void/std"]
