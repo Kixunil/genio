@@ -23,6 +23,14 @@ impl Write for Vec<u8> {
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         Ok(())
     }
+
+    fn size_hint(&mut self, bytes: usize) {
+        self.reserve(bytes)
+    }
+
+    fn uses_size_hint(&self) -> bool {
+        true
+    }
 }
 
 impl ExtendFromReaderSlow for Vec<u8> {
@@ -105,6 +113,9 @@ impl Write for Sink {
 
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         Ok(())
+    }
+
+    fn size_hint(&mut self, _bytes: usize) {
     }
 }
 
@@ -243,6 +254,9 @@ impl<W: io::Write> Write for GenioWrite<W> {
     fn flush(&mut self) -> Result<(), io::Error> {
         self.0.flush()
     }
+
+    fn size_hint(&mut self, _bytes: usize) {
+    }
 }
 
 /// Wrapper providing `genio::Read + genio::Write` traits for `std::io::Read + std::io::Write` types.
@@ -278,5 +292,8 @@ impl<T: io::Write> Write for GenioIo<T> {
 
     fn flush(&mut self) -> Result<(), io::Error> {
         self.0.flush()
+    }
+
+    fn size_hint(&mut self, _bytes: usize) {
     }
 }

@@ -52,7 +52,11 @@ impl<W> Write for Restarting<W> where W: Write, W::WriteError: IntoIntrError, W:
         Self::restart_call(|| self.0.flush())    
     }
 
-    fn size_hint(&mut self, min: usize, max: Option<usize>) {
-        self.0.size_hint(min, max);
+    fn size_hint(&mut self, bytes: usize) {
+        self.0.size_hint(bytes);
+    }
+
+    fn uses_size_hint(&self) -> bool {
+        self.0.uses_size_hint()
     }
 }

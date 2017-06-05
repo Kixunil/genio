@@ -237,18 +237,24 @@ pub trait Write {
     }
 
     /// Hints the writer how much bytes will be written after call to this function.
-    /// At least `min` bytes should be written after the call to this function and if `max` is
-    /// `Some(x)` than at most `x` bytes should be written.
+    /// If the maximum amount of bytes to be written is known then it should be passed as argument.
+    /// If the maximum amount is unknown, then minimum should be passed.
     ///
     /// Call to this function might enable some optimizations (e.g. pre-allocating buffer of
     /// appropriate size). The implementors must not rely on this call to provide correct values or
     /// on this function being called at all! (Especially they **must not** cause undefined
-    /// behavior.) However, performance might be arbitrarilly degraded in case **min value** is incorrect.
+    /// behavior.) However, performance might be arbitrarilly degraded in case caller provides
+    /// wrong value.
     ///
-    /// By default this function does nothing.
-    fn size_hint(&mut self, min: usize, max: Option<usize>) {
-        let _ = min;
-        let _ = max;
+    /// The function is mandatory, as a lint to incentivize implementors to implement it, if
+    /// applicable. Note that if you implement this function, you must also implement
+    /// `uses_size_hint`.
+    fn size_hint(&mut self, bytes: usize);
+
+    /// Reports to the caller whether size hint is actually used. This can prevent costly
+    /// computation of size hint that would be thrown away.
+    fn uses_size_hint(&self) -> bool {
+        false
     }
 }
 
@@ -305,4 +311,6 @@ impl<'a> Write for &'a mut [u8] {
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         Ok(())
     }
+    
+    fn size_hint(&mut self, _bytes: usize) {}
 }

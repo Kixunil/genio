@@ -15,4 +15,6 @@ impl Write for Sink {
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         Ok(())
     }
+
+    fn size_hint(&mut self, _bytes: usize) {}
 }

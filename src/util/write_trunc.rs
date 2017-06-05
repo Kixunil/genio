@@ -63,4 +63,16 @@ impl<W: Write> Write for WriteTrunc<W> {
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         self.writer.flush()
     }
+
+    fn size_hint(&mut self, bytes: usize) {
+        if bytes as u64 > self.remaining {
+            self.writer.size_hint(self.remaining as usize)
+        } else {
+            self.writer.size_hint(bytes)
+        }
+    }
+
+    fn uses_size_hint(&self) -> bool {
+        self.writer.uses_size_hint()
+    }
 }
