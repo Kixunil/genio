@@ -70,23 +70,160 @@ impl<'a> BufReadRequire for &'a [u8] {
 
 /// When writing, it might be better to serialize directly into a buffer. This trait allows such
 /// situation.
-pub trait BufWrite: Write {
-    /// Requests buffer for writing. `min` hints that at least `min` bytes will be written. `Some(max)`
-    /// hints that at most `max` bytes will be written. However, consumer can't rely on buffer
-    /// returning any amount and must check it by calling `len()` on returned buffer.
-    fn request_buffer(&mut self, min: usize, max: Option<usize>) -> &mut [u8];
+///
+/// This triat is `unsafe` because it optimizes buffers to not require zeroing.
+pub unsafe trait BufWrite: Write {
+    /// Requests buffer for writing.
+    /// The buffer is represented as a pointer because it may contain uninitialized memory - only
+    /// writing is allowed. The pointer must not outlive Self!
+    ///
+    /// The returned slice must always be non-empty. If non-emty slice can't be returned, `Err` must
+    /// be returned instead. If the underlying writer is full, it has to flush the buffer.
+    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError>;
 
     /// Tells the buf writer that `size` bytes were written into buffer.
-    fn submit_buffer(&mut self, size: usize);
+    ///
+    /// The `size` must NOT be bigger by mistake!
+    unsafe fn submit_buffer(&mut self, size: usize);
+
+    /// Writes single byte. Since this is buffered, the operation will be efficient.
+    fn write_byte(&mut self, byte: u8) -> Result<(), Self::WriteError> {
+        unsafe {
+            (*self.request_buffer()?)[0] = byte;
+            self.submit_buffer(1);
+        }
+        Ok(())
+    }
 }
 
 /// This trait allows requiring buffer of specified size.
-pub trait BufWriteRequire: BufWrite {
+pub unsafe trait BufWriteRequire: BufWrite {
     /// Indicates error in buffer. Most often caused by size being too large but it might be also
     /// a write error, if buf writer tried to flush buffer.
     type BufWriteError;
 
     /// Require buffer with minimum `size` bytes. It is an error to return smaller buffer but
     /// `unsafe` code can't rely on it. 
-    fn require_buffer(&mut self, size: usize) -> Result<&mut [u8], Self::BufWriteError>;
+    fn require_buffer(&mut self, size: usize) -> Result<*mut [u8], Self::BufWriteError>;
+}
+
+/// Represents type that can serve as (possibly uninitialized) buffer
+pub trait AsRawBuf {
+    /// Returns a pointer to the buffer. It may point to uninitialized data. The pointer must not
+    /// outlive the buffer.
+    fn as_raw_buf(&mut self) -> *mut [u8];
+}
+
+impl<T: AsRef<[u8]> + AsMut<[u8]>> AsRawBuf for T {
+    fn as_raw_buf(&mut self) -> *mut [u8] {
+        self.as_mut()
+    }
+}
+
+/// Wrapper that provides buffering for a writer.
+pub struct BufWriter<W, B> {
+    writer: W,
+    buffer: B,
+    cursor: usize,
+}
+
+impl<W: Write, B: AsRawBuf> BufWriter<W, B> {
+    /// Creates buffered writer.
+    ///
+    /// Warning: buffer must be non-zero! Otherwise the program may panic!
+    pub fn new(writer: W, buffer: B) -> Self {
+        BufWriter {
+            writer,
+            buffer,
+            cursor: 0,
+        }
+    }
+
+    fn flush_if_full(&mut self) -> Result<(), <Self as Write>::WriteError> {
+        unsafe {
+            let buf = &mut *self.buffer.as_raw_buf();
+            if self.cursor == buf.len() {
+                self.flush()
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
+    type WriteError = W::WriteError;
+    type FlushError = W::WriteError;
+
+    fn write(&mut self, data: &[u8]) -> Result<usize, Self::WriteError> {
+        self.flush_if_full()?;
+
+        // This is correct because it only writes to the buffer
+        unsafe {
+            // Get the ref to uninitialized buffer
+            let buf = &mut (*self.buffer.as_raw_buf())[self.cursor..];
+
+            // Calculate how much bytes to copy (doesn't read uninitialized).
+            let to_copy = ::core::cmp::min(buf.len(), data.len());
+
+            // Copy data. Overwrites uninitialized.
+            buf[0..to_copy].copy_from_slice(&data[0..to_copy]);
+
+            // Updates cursor by exactly the amount of bytes overwritten.
+            self.cursor += to_copy;
+
+            Ok(to_copy)
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), Self::FlushError> {
+        // This is correct because it gets slice to initialized data
+        let buf = unsafe {
+            &mut (*self.buffer.as_raw_buf())[0..self.cursor]
+        };
+
+        self.cursor = 0;
+
+        self.writer.write_all(buf)
+    }
+
+    fn size_hint(&mut self, bytes: usize) {
+        self.writer.size_hint(bytes)
+    }
+
+    fn uses_size_hint(&self) -> bool {
+        self.writer.uses_size_hint()
+    }
+}
+
+unsafe impl<W: Write, B: AsRawBuf> BufWrite for BufWriter<W, B> {
+    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
+        self.flush_if_full()?;
+
+        // This simply returns pointer to the uninitialized buffer
+        unsafe {
+            let slice = &mut (*self.buffer.as_raw_buf())[self.cursor..];
+            assert!(slice.len() > 0);
+            Ok(slice)
+        }
+    }
+
+    unsafe fn submit_buffer(&mut self, size: usize) {
+        self.cursor += size;
+    }
+}
+
+unsafe impl<'a> BufWrite for &'a mut [u8] {
+    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
+        if self.len() > 0 {
+            Ok(*self)
+        } else {
+            Err(::error::BufferOverflow)
+        }
+    }
+
+    unsafe fn submit_buffer(&mut self, size: usize) {
+        let tmp = ::core::mem::replace(self, &mut []);
+        *self = &mut tmp[size..];
+    }
 }

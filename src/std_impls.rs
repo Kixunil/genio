@@ -10,6 +10,7 @@ use void::Void;
 use std::vec::Vec;
 use std::io::{Sink, Empty};
 use std::io;
+use bufio::BufWrite;
 
 impl Write for Vec<u8> {
     type WriteError = Void;
@@ -30,6 +31,23 @@ impl Write for Vec<u8> {
 
     fn uses_size_hint(&self) -> bool {
         true
+    }
+}
+
+unsafe impl BufWrite for Vec<u8> {
+    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
+        use ::std::slice;
+
+        // Ensure there is a space for data
+        self.reserve(1);
+        unsafe {
+            Ok(&mut slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity())[self.len()..])
+        }
+    }
+
+    unsafe fn submit_buffer(&mut self, size: usize) {
+        let new_len = self.len() + size;
+        self.set_len(new_len)
     }
 }
 
