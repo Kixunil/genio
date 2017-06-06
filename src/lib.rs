@@ -13,6 +13,9 @@
 #[cfg(feature = "use_std")]
 extern crate std;
 
+#[cfg(feature = "byteorder")]
+extern crate byteorder;
+
 extern crate void;
 
 #[cfg(feature = "use_std")]
@@ -26,6 +29,9 @@ pub mod bufio;
 use void::Void;
 use error::{ReadExactError, ExtendError};
 use util::Chain;
+
+#[cfg(feature = "byteorder")]
+use byteorder::ByteOrder;
 
 /// The Read trait allows for reading bytes from a source.
 ///
@@ -137,6 +143,72 @@ pub trait Read {
     /// The returned adaptor also implements `Read` and will simply borrow this current reader.
     fn by_ref(&mut self) -> &mut Self where Self: Sized {
         self
+    }
+
+    /// Reads an unsigned 16 bit integer from the underlying reader.
+    #[cfg(feature = "byteorder")]
+    fn read_u16<BO: ByteOrder>(&mut self) -> Result<u16, Self::WriteError> {
+        let mut buf = [0; 2];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_u16(&buf))
+    }
+
+    /// Reads an unsigned 32 bit integer from the underlying reader.
+    #[cfg(feature = "byteorder")]
+    fn read_u32<BO: ByteOrder>(&mut self) -> Result<u16, Self::WriteError> {
+        let mut buf = [0; 4];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_u32(&buf))
+    }
+
+    /// Reads an unsigned 64 bit integer from the underlying reader.
+    #[cfg(feature = "byteorder")]
+    fn read_u64<BO: ByteOrder>(&mut self) -> Result<u64, Self::WriteError> {
+        let mut buf = [0; 8];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_u64(&buf))
+    }
+
+    /// Reads an signed 16 bit integer from the underlying reader.
+    #[cfg(feature = "byteorder")]
+    fn read_i16<BO: ByteOrder>(&mut self) -> Result<i16, Self::WriteError> {
+        let mut buf = [0; 2];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_i16(&buf))
+    }
+
+    /// Reads an signed 32 bit integer from the underlying reader.
+    #[cfg(feature = "byteorder")]
+    fn read_i32<BO: ByteOrder>(&mut self) -> Result<i16, Self::WriteError> {
+        let mut buf = [0; 4];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_i32(&buf))
+    }
+
+    /// Reads an signed 64 bit integer from the underlying reader.
+    #[cfg(feature = "byteorder")]
+    fn read_i64<BO: ByteOrder>(&mut self) -> Result<i64, Self::WriteError> {
+        let mut buf = [0; 8];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_i64(&buf))
+    }
+
+    /// Reads a IEEE754 single-precision (4 bytes) floating point number from the underlying
+    /// reader.
+    #[cfg(feature = "byteorder")]
+    fn read_f32<BO: ByteOrder>(&mut self) -> Result<f32, Self::WriteError> {
+        let mut buf = [0; 4];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_f32(&buf))
+    }
+
+    /// Reads a IEEE754 double-precision (8 bytes) floating point number from the underlying
+    /// reader.
+    #[cfg(feature = "byteorder")]
+    fn read_f64<BO: ByteOrder>(&mut self) -> Result<f64, Self::WriteError> {
+        let mut buf = [0; 8];
+        self.read_exact(&mut buf)?;
+        Ok(BO::read_f64(&buf))
     }
 }
 
@@ -255,6 +327,92 @@ pub trait Write {
     /// computation of size hint that would be thrown away.
     fn uses_size_hint(&self) -> bool {
         false
+    }
+
+    /// Writes an unsigned 16 bit integer to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_u16<BO: ByteOrder>(&mut self, val: u16) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 2];
+        BO::write_u16(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes an unsigned 32 bit integer to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_u32<BO: ByteOrder>(&mut self, val: u32) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 4];
+        BO::write_u32(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes an unsigned 64 bit integer to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_u64<BO: ByteOrder>(&mut self, val: u64) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 8];
+        BO::write_u64(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes an unsigned n-bytes integer to the underlying writer.
+    ///
+    /// If the given integer is not representable in the given number of bytes, this method panics.
+    /// If nbytes > 8, this method panics.
+    #[cfg(feature = "byteorder")]
+    fn write_uint<BO: ByteOrder>(&mut self, val: u64, bytes: usize) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 8];
+        BO::write_uint(&mut buf, val, bytes);
+        self.write_all(&buf)
+    }
+
+    /// Writes a signed 16 bit integer to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_i16<BO: ByteOrder>(&mut self, val: i16) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 2];
+        BO::write_i16(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes a signed 32 bit integer to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_i32<BO: ByteOrder>(&mut self, val: i32) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 4];
+        BO::write_i32(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes a signed 64 bit integer to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_i64<BO: ByteOrder>(&mut self, val: i64) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 8];
+        BO::write_i64(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes a signed n-bytes integer to the underlying writer.
+    ///
+    /// If the given integer is not representable in the given number of bytes, this method panics.
+    /// If nbytes > 8, this method panics.
+    #[cfg(feature = "byteorder")]
+    fn write_int<BO: ByteOrder>(&mut self, val: i64, bytes: usize) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 8];
+        BO::write_int(&mut buf, val, bytes);
+        self.write_all(&buf)
+    }
+
+    /// Writes a IEEE754 single-precision (4 bytes) floating point number to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_f32<BO: ByteOrder>(&mut self, val: f32) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 4];
+        BO::write_f32(&mut buf, val);
+        self.write_all(&buf)
+    }
+
+    /// Writes a IEEE754 double-precision (8 bytes) floating point number to the underlying writer.
+    #[cfg(feature = "byteorder")]
+    fn write_f64<BO: ByteOrder>(&mut self, val: f64) -> Result<(), Self::WriteError> {
+        let mut buf = [0; 4];
+        BO::write_f64(&mut buf, val);
+        self.write_all(&buf)
     }
 }
 

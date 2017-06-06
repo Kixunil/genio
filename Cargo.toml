@@ -18,6 +18,7 @@ be better at expressing what kinds of error can happen.
 
 [dependencies]
 void = { version = "1", default-features = false }
+byteorder = { version = "1", optional = true }
 
 [features]
 default = ["use_std"]
