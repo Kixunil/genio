@@ -424,6 +424,29 @@ impl<'a, R: Read + ?Sized> Read for &'a mut R {
     }
 }
 
+impl<'a, W: Write + ?Sized> Write for &'a mut W {
+    type WriteError = W::WriteError;
+    type FlushError = W::FlushError;
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
+        (*self).write(buf)
+    }
+
+    fn flush(&mut self) -> Result<(), Self::FlushError> {
+        (*self).flush()
+    }
+
+    fn size_hint(&mut self, bytes: usize) {
+        (*self).size_hint(bytes)
+    }
+
+    /// Reports to the caller whether size hint is actually used. This can prevent costly
+    /// computation of size hint that would be thrown away.
+    fn uses_size_hint(&self) -> bool {
+        (**self).uses_size_hint()
+    }
+}
+
 impl<'a> Read for &'a [u8] {
     type ReadError = Void;
 

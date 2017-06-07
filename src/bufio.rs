@@ -17,6 +17,16 @@ pub trait BufRead: Read {
     fn consume(&mut self, amount: usize);
 }
 
+impl<'a, R: BufRead> BufRead for &'a mut R {
+    fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
+        (*self).fill_buf()
+    }
+
+    fn consume(&mut self, amount: usize) {
+        (*self).consume(amount)
+    }
+}
+
 impl<'a> BufRead for &'a [u8] {
     fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
         Ok(*self)
@@ -210,6 +220,16 @@ unsafe impl<W: Write, B: AsRawBuf> BufWrite for BufWriter<W, B> {
 
     unsafe fn submit_buffer(&mut self, size: usize) {
         self.cursor += size;
+    }
+}
+
+unsafe impl<'a, W: BufWrite> BufWrite for &'a mut W {
+    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
+        (*self).request_buffer()
+    }
+
+    unsafe fn submit_buffer(&mut self, size: usize) {
+        (*self).submit_buffer(size)
     }
 }
 
