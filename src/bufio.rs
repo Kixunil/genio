@@ -122,11 +122,18 @@ pub trait AsRawBuf {
     /// Returns a pointer to the buffer. It may point to uninitialized data. The pointer must not
     /// outlive the buffer.
     fn as_raw_buf(&mut self) -> *mut [u8];
+
+    /// Returns the length of the buffer.
+    fn len(&self) -> usize;
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> AsRawBuf for T {
     fn as_raw_buf(&mut self) -> *mut [u8] {
         self.as_mut()
+    }
+
+    fn len(&self) -> usize {
+        self.as_ref().len()
     }
 }
 
@@ -150,13 +157,10 @@ impl<W: Write, B: AsRawBuf> BufWriter<W, B> {
     }
 
     fn flush_if_full(&mut self) -> Result<(), <Self as Write>::WriteError> {
-        unsafe {
-            let buf = &mut *self.buffer.as_raw_buf();
-            if self.cursor == buf.len() {
-                self.flush()
-            } else {
-                Ok(())
-            }
+        if self.cursor == self.buffer.len() {
+            self.flush()
+        } else {
+            Ok(())
         }
     }
 }
@@ -166,7 +170,13 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
     type FlushError = W::WriteError;
 
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::WriteError> {
-        self.flush_if_full()?;
+        let buf_len = self.buffer.len();
+        if self.cursor == buf_len {
+            self.flush()?;
+            if data.len() >= buf_len {
+                return self.writer.write(&data);
+            }
+        }
 
         // This is correct because it only writes to the buffer
         unsafe {
@@ -174,7 +184,7 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
             let buf = &mut (*self.buffer.as_raw_buf())[self.cursor..];
 
             // Calculate how much bytes to copy (doesn't read uninitialized).
-            let to_copy = ::core::cmp::min(buf.len(), data.len());
+            let to_copy = ::core::cmp::min(buf_len, data.len());
 
             // Copy data. Overwrites uninitialized.
             buf[0..to_copy].copy_from_slice(&data[0..to_copy]);
