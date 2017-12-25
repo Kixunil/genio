@@ -3,6 +3,9 @@ Generic IO
 
 A type safe, low level replacement for `std::io`.
 
+Supports `no_std` for embedded development, just disable cargo feature
+`use_std`.
+
 Motivation
 ----------
 
