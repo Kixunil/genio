@@ -4,12 +4,16 @@ version = "0.2.0"
 authors = ["Martin Habovštiak <martin.habovstiak@gmail.com>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
-keywords = ["io", "generic", "read", "write"]
+keywords = ["io", "generic", "read", "write", "no_std"]
+categories = ["no-std", "embedded"]
 repository = "https://github.com/Kixunil/genio"
 homepage = "https://github.com/Kixunil/genio"
 documentation = "https://docs.rs/genio"
 description = """
 A type safe, low level replacement for `std::io`.
+
+Supports `no_std` for embedded development, just disable cargo feature
+`use_std`.
 
 Because of limitations of `std::io::Error` type, `genio` provides `Read` and
 `Write` traits that allow implementors to choose their own type. This type can
