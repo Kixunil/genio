@@ -155,7 +155,7 @@ pub trait Read {
 
     /// Reads an unsigned 32 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_u32<BO: ByteOrder>(&mut self) -> Result<u16, Self::WriteError> {
+    fn read_u32<BO: ByteOrder>(&mut self) -> Result<u32, Self::WriteError> {
         let mut buf = [0; 4];
         self.read_exact(&mut buf)?;
         Ok(BO::read_u32(&buf))
@@ -179,7 +179,7 @@ pub trait Read {
 
     /// Reads an signed 32 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_i32<BO: ByteOrder>(&mut self) -> Result<i16, Self::WriteError> {
+    fn read_i32<BO: ByteOrder>(&mut self) -> Result<i32, Self::WriteError> {
         let mut buf = [0; 4];
         self.read_exact(&mut buf)?;
         Ok(BO::read_i32(&buf))
