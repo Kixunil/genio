@@ -10,7 +10,7 @@ pub struct RepeatBytes<B> {
 impl<B: AsRef<[u8]>> Read for RepeatBytes<B> {
     type ReadError = Void;
     
-    fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
         use ::core::cmp::min;
         let len = buf.len();
         let bytes = self.bytes.as_ref();
