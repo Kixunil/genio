@@ -13,7 +13,7 @@ The IO routines you can find in standard library are very useful. However, becau
 
 * It's impossible to express infallible operations (e.g. in-memory operations) in types.
 * If you know the operation can't fail, you still have to call `unwrap()`. If you did mistake you get runtime error.
-* Compiler has to insert check (compare and branch), which slows down the code. Of course, it can't be eliminated by inlining and optimization but it's not sure thing.
+* Compiler has to insert check (compare and branch), which slows down the code. Of course, it can be eliminated by inlining and optimization but it's not sure thing.
 * `io::Error` may allocate, which makes not just slower but prevents usage on bare metal.
 * `io::Error` is very broad and in some contexts it can have nonsense values (e.g. full disk when doing `read()`). Perfect program should not ignore these values but it's difficult to decide what to do about them.
 * You can reasonably decide what to do with error only using `ErrorKind`. That way some information may be lost.
@@ -55,7 +55,7 @@ Differences between `genio` and `std::io`
 
 There are other differences than just associated error types. Most importantly, `genio` aims to implement thinner wrappers and layers. For example, it doesn't handle EINTR automatically, but requires you to handle it yourself - for example, using `Restarting` wrapper. This gives you better control of what's going on in the code and also simplifies the implementation of the wrappers.
 
-Some operations use slightly different types. `read_exact` may return `UnexpectedEnd` in addition to lower-level error type. Chain combines two erro types. `read_to_end` enables to use any type which can be extended from reader. Flushing can return different error than `write()`. If there's nothing to flush, it can return `Void` type.
+Some operations use slightly different types. `read_exact` may return `UnexpectedEnd` in addition to lower-level error type. Chain combines two error types. `read_to_end` enables to use any type which can be extended from reader. Flushing can return different error than `write()`. If there's nothing to flush, it can return `Void` type.
 
 In addition, `read()` may hint that there are not enough bytes (usable to skip reading in error cases) and `Write` may be hinted how many bytes will be written. (This is unstable yet.)
 
