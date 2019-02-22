@@ -10,7 +10,7 @@
 #![no_std]
 #![deny(missing_docs)]
 
-#[cfg(feature = "use_std")]
+#[cfg(feature = "std")]
 extern crate std;
 
 #[cfg(feature = "byteorder")]
@@ -18,7 +18,7 @@ extern crate byteorder;
 
 extern crate void;
 
-#[cfg(feature = "use_std")]
+#[cfg(feature = "std")]
 pub mod std_impls;
 
 pub mod error;

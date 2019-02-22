@@ -13,7 +13,7 @@ description = """
 A type safe, low level replacement for `std::io`.
 
 Supports `no_std` for embedded development, just disable cargo feature
-`use_std`.
+`std`.
 
 Because of limitations of `std::io::Error` type, `genio` provides `Read` and
 `Write` traits that allow implementors to choose their own type. This type can
@@ -25,6 +25,8 @@ void = { version = "1", default-features = false }
 byteorder = { version = "1", optional = true }
 
 [features]
-default = ["use_std"]
+default = ["std"]
+std = ["void/std"]
 
-use_std = ["void/std"]
+# Deprecated, kept for backward compatibility
+use_std = ["std"]
