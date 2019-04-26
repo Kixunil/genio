@@ -1,8 +1,10 @@
 //! Contains traits and impls for buffering.
 
+use DEFAULT_BUF_SIZE;
 use Read;
 use Write;
 use error::BufError;
+use ::core::mem::replace;
 use ::void::Void;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
@@ -137,6 +139,110 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> AsRawBuf for T {
     }
 }
 
+/// Wrapper that provides buffering for a reader.
+#[cfg(feature = "std")]
+pub struct BufReaderRequire<R> {
+    reader: R,
+    buffer: std::vec::Vec<u8>,
+    start: usize,
+    end: usize,
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufReaderRequire<R> {
+    /// Creates buffered reader.
+    pub fn new(reader: R) -> Self {
+        let mut buffer = std::vec::Vec::new();
+        buffer.resize(DEFAULT_BUF_SIZE, 0);
+        BufReaderRequire {
+            reader,
+            buffer,
+            start: 0,
+            end: 0,
+        }
+    }
+
+    /// Unwraps inner reader.
+    ///
+    /// Any data in the internal buffer is lost.
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> Read for BufReaderRequire<R> {
+    type ReadError = R::ReadError;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+        let n = {
+            let data = self.fill_buf()?;
+            let n = data.len().max(buf.len());
+            buf[..n].copy_from_slice(&data[..n]);
+            n
+        };
+        self.consume(n);
+        Ok(n)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufRead for BufReaderRequire<R> {
+    fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
+        if self.end - self.start == 0 {
+            self.start = 0;
+            self.end = self.reader.read(&mut self.buffer[..])?;
+        }
+        Ok(&self.buffer[self.start..self.end])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.start = self.start.saturating_add(amount).max(self.buffer.len());
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufReadProgress for BufReaderRequire<R> {
+    type BufReadError = Void;
+
+    fn fill_progress(&mut self) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+        let amount = self.end - self.start + 1;
+        self.require_bytes(amount)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufReadRequire for BufReaderRequire<R> {
+    type BufReadError = Void;
+
+    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+        if self.end - self.start >= amount {
+            return Ok(&self.buffer[self.start..self.end]);
+        }
+        if amount > self.buffer.len() {
+            let len = self.buffer.len();
+            self.buffer.reserve(amount - len);
+            let new_capacity = self.buffer.capacity();
+            self.buffer.resize(new_capacity, 0);
+        }
+        if amount > self.buffer.len() - self.start {
+            self.buffer.drain(..self.start);
+            self.end -= self.start;
+            self.start = 0;
+            let capacity = self.buffer.capacity();
+            self.buffer.resize(capacity, 0);
+        }
+        while self.end - self.start < amount {
+            match self.reader.read(&mut self.buffer[self.end..]) {
+                Ok(0) => return Err(BufError::End),
+                Ok(read_len) => self.end += read_len,
+                Err(error) => return Err(BufError::OtherErr(error)),
+            }
+        }
+        Ok(&self.buffer[self.start..self.end])
+    }
+}
+
 /// Wrapper that provides buffering for a writer.
 pub struct BufWriter<W, B> {
     writer: W,
@@ -253,7 +359,7 @@ unsafe impl<'a> BufWrite for &'a mut [u8] {
     }
 
     unsafe fn submit_buffer(&mut self, size: usize) {
-        let tmp = ::core::mem::replace(self, &mut []);
+        let tmp = replace(self, &mut []);
         *self = &mut tmp[size..];
     }
 }
