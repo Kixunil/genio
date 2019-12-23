@@ -8,6 +8,7 @@ use ::core::fmt;
 /// write errors into single type.
 ///
 /// This is different than `std::io::Error`!
+#[derive(Debug)]
 pub enum IOError<R, W> {
     /// Read operation failed.
     Read(R),
@@ -42,6 +43,7 @@ impl<R, W> IOError<R, W> {
 }
 
 /// Error that might occur when reading exact amount of bytes.
+#[derive(Debug)]
 pub enum ReadExactError<E> {
     /// Low-level error happened.
     Other(E),
@@ -61,6 +63,7 @@ impl<E> From<E> for ReadExactError<E> {
 /// Error returned when chained readers fail. It allows inspecting which reader failed, keeping
 /// it's own error type. For simplicity it can be also merged, if the two errors are convertible to
 /// resulting error.
+#[derive(Debug)]
 pub enum ChainError<F, S> {
     /// First reader failed.
     First(F),
@@ -97,6 +100,7 @@ impl<F, S> ChainError<F, S> {
 
 /// This error type indicates that operation might fail in restartible manner. The most obvious
 /// case is `EINTR` returned from syscalls when a signal is delivered while doing `read`.
+#[derive(Debug)]
 pub enum IntrError<E> {
     /// The error wasn't interruption.
     Other(E),
@@ -140,6 +144,7 @@ impl IntoIntrError for Void {
 */
 
 /// Error that might occur when interacting with buf reader.
+#[derive(Debug)]
 pub enum BufError<B, E> {
     /// The underlying stream reached the end.
     End,
@@ -150,6 +155,7 @@ pub enum BufError<B, E> {
 }
 
 /// Error that might occur when doing operation on `ExtendFromReader`
+#[derive(Debug)]
 pub enum ExtendError<R, E> {
     /// Reader failed
     ReadErr(R),
