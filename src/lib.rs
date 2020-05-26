@@ -21,14 +21,14 @@ extern crate void;
 #[cfg(feature = "std")]
 pub mod std_impls;
 
+pub mod bufio;
 pub mod error;
 pub mod ext;
 pub mod util;
-pub mod bufio;
 
-use void::Void;
-use error::{ReadExactError, ExtendError};
+use error::{ExtendError, ReadExactError};
 use util::Chain;
+use void::Void;
 
 #[cfg(feature = "byteorder")]
 use byteorder::ByteOrder;
@@ -118,7 +118,10 @@ pub trait Read {
 
     /// Chains another reader after `self`. When self ends (returns Ok(0)), the other reader will
     /// provide bytes to read.
-    fn chain<R: Read>(self, other: R) -> Chain<Self, R> where Self: Sized {
+    fn chain<R: Read>(self, other: R) -> Chain<Self, R>
+    where
+        Self: Sized,
+    {
         Chain::new(self, other)
     }
 
@@ -126,13 +129,19 @@ pub trait Read {
     /// the case of `std::io` and might enable some optimizations.
     ///
     /// Of course, `std::Vec` impls `ExtendFromReader`.
-    fn read_to_end<T: ExtendFromReader>(&mut self, container: &mut T) -> Result<usize, ExtendError<Self::ReadError, T::ExtendError>> where Self: ReadOverwrite {
+    fn read_to_end<T: ExtendFromReader>(
+        &mut self,
+        container: &mut T,
+    ) -> Result<usize, ExtendError<Self::ReadError, T::ExtendError>>
+    where
+        Self: ReadOverwrite,
+    {
         let mut total_bytes = 0;
 
         loop {
             let bytes = container.extend_from_reader(self)?;
             if bytes == 0 {
-                return Ok(total_bytes)
+                return Ok(total_bytes);
             }
             total_bytes += bytes;
         }
@@ -141,13 +150,16 @@ pub trait Read {
     /// Creates a "by reference" adaptor for this instance of `Read`.
     ///
     /// The returned adaptor also implements `Read` and will simply borrow this current reader.
-    fn by_ref(&mut self) -> &mut Self where Self: Sized {
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
         self
     }
 
     /// Reads an unsigned 16 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_u16<BO: ByteOrder>(&mut self) -> Result<u16, Self::WriteError> {
+    fn read_u16<BO: ByteOrder>(&mut self) -> Result<u16, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 2];
         self.read_exact(&mut buf)?;
         Ok(BO::read_u16(&buf))
@@ -155,7 +167,7 @@ pub trait Read {
 
     /// Reads an unsigned 32 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_u32<BO: ByteOrder>(&mut self) -> Result<u32, Self::WriteError> {
+    fn read_u32<BO: ByteOrder>(&mut self) -> Result<u32, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 4];
         self.read_exact(&mut buf)?;
         Ok(BO::read_u32(&buf))
@@ -163,7 +175,7 @@ pub trait Read {
 
     /// Reads an unsigned 64 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_u64<BO: ByteOrder>(&mut self) -> Result<u64, Self::WriteError> {
+    fn read_u64<BO: ByteOrder>(&mut self) -> Result<u64, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 8];
         self.read_exact(&mut buf)?;
         Ok(BO::read_u64(&buf))
@@ -171,7 +183,7 @@ pub trait Read {
 
     /// Reads an signed 16 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_i16<BO: ByteOrder>(&mut self) -> Result<i16, Self::WriteError> {
+    fn read_i16<BO: ByteOrder>(&mut self) -> Result<i16, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 2];
         self.read_exact(&mut buf)?;
         Ok(BO::read_i16(&buf))
@@ -179,7 +191,7 @@ pub trait Read {
 
     /// Reads an signed 32 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_i32<BO: ByteOrder>(&mut self) -> Result<i32, Self::WriteError> {
+    fn read_i32<BO: ByteOrder>(&mut self) -> Result<i32, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 4];
         self.read_exact(&mut buf)?;
         Ok(BO::read_i32(&buf))
@@ -187,7 +199,7 @@ pub trait Read {
 
     /// Reads an signed 64 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
-    fn read_i64<BO: ByteOrder>(&mut self) -> Result<i64, Self::WriteError> {
+    fn read_i64<BO: ByteOrder>(&mut self) -> Result<i64, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 8];
         self.read_exact(&mut buf)?;
         Ok(BO::read_i64(&buf))
@@ -196,7 +208,7 @@ pub trait Read {
     /// Reads a IEEE754 single-precision (4 bytes) floating point number from the underlying
     /// reader.
     #[cfg(feature = "byteorder")]
-    fn read_f32<BO: ByteOrder>(&mut self) -> Result<f32, Self::WriteError> {
+    fn read_f32<BO: ByteOrder>(&mut self) -> Result<f32, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 4];
         self.read_exact(&mut buf)?;
         Ok(BO::read_f32(&buf))
@@ -205,7 +217,7 @@ pub trait Read {
     /// Reads a IEEE754 double-precision (8 bytes) floating point number from the underlying
     /// reader.
     #[cfg(feature = "byteorder")]
-    fn read_f64<BO: ByteOrder>(&mut self) -> Result<f64, Self::WriteError> {
+    fn read_f64<BO: ByteOrder>(&mut self) -> Result<f64, ReadExactError<Self::ReadError>> {
         let mut buf = [0; 8];
         self.read_exact(&mut buf)?;
         Ok(BO::read_f64(&buf))
@@ -222,14 +234,20 @@ pub trait ExtendFromReaderSlow {
     type ExtendError;
 
     /// This method performs extending from reader - that means calling `read()` just once.
-    fn extend_from_reader_slow<R: Read + ?Sized>(&mut self, reader: &mut R) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>>;
+    fn extend_from_reader_slow<R: Read + ?Sized>(
+        &mut self,
+        reader: &mut R,
+    ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>>;
 }
 
 /// This trait is similar to slow one. The difference is that thanks to reader guaranteeing
 /// correctness, this one can use uninitialized buffer.
 pub trait ExtendFromReader: ExtendFromReaderSlow {
     /// This method performs extending from reader - that means calling `read()` just once.
-    fn extend_from_reader<R: Read + ReadOverwrite + ?Sized>(&mut self, reader: &mut R) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>>;
+    fn extend_from_reader<R: Read + ReadOverwrite + ?Sized>(
+        &mut self,
+        reader: &mut R,
+    ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>>;
 }
 
 /// This marker trait declares that the Read trait is implemented correctly,
@@ -358,7 +376,11 @@ pub trait Write {
     /// If the given integer is not representable in the given number of bytes, this method panics.
     /// If nbytes > 8, this method panics.
     #[cfg(feature = "byteorder")]
-    fn write_uint<BO: ByteOrder>(&mut self, val: u64, bytes: usize) -> Result<(), Self::WriteError> {
+    fn write_uint<BO: ByteOrder>(
+        &mut self,
+        val: u64,
+        bytes: usize,
+    ) -> Result<(), Self::WriteError> {
         let mut buf = [0; 8];
         BO::write_uint(&mut buf, val, bytes);
         self.write_all(&buf)
@@ -492,6 +514,6 @@ impl<'a> Write for &'a mut [u8] {
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         Ok(())
     }
-    
+
     fn size_hint(&mut self, _bytes: usize) {}
 }
