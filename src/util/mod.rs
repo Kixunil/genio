@@ -18,7 +18,9 @@ pub use self::repeat::Repeat;
 pub use self::repeat_bytes::RepeatBytes;
 pub use self::bytes::Bytes;
 
-use {DEFAULT_BUF_SIZE, Read, Write};
+const DEFAULT_BUF_SIZE: usize = 8 * 1024;
+
+use {Read, Write};
 use error::IOError;
 
 /// Copies the entire contents of a reader into a writer.

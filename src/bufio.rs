@@ -1,10 +1,9 @@
 //! Contains traits and impls for buffering.
 
-use DEFAULT_BUF_SIZE;
 use Read;
 use Write;
 use error::BufError;
-use ::core::mem::replace;
+use util::DEFAULT_BUF_SIZE;
 use ::void::Void;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
@@ -143,7 +142,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> AsRawBuf for T {
 #[cfg(feature = "std")]
 pub struct BufReaderRequire<R> {
     reader: R,
-    buffer: std::vec::Vec<u8>,
+    buffer: ::std::vec::Vec<u8>,
     start: usize,
     end: usize,
 }
@@ -152,7 +151,7 @@ pub struct BufReaderRequire<R> {
 impl<R: Read> BufReaderRequire<R> {
     /// Creates buffered reader.
     pub fn new(reader: R) -> Self {
-        let mut buffer = std::vec::Vec::new();
+        let mut buffer = ::std::vec::Vec::new();
         buffer.resize(DEFAULT_BUF_SIZE, 0);
         BufReaderRequire {
             reader,
@@ -359,7 +358,7 @@ unsafe impl<'a> BufWrite for &'a mut [u8] {
     }
 
     unsafe fn submit_buffer(&mut self, size: usize) {
-        let tmp = replace(self, &mut []);
+        let tmp = ::core::mem::replace(self, &mut []);
         *self = &mut tmp[size..];
     }
 }

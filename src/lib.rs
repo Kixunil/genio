@@ -33,8 +33,6 @@ use util::Chain;
 #[cfg(feature = "byteorder")]
 use byteorder::ByteOrder;
 
-const DEFAULT_BUF_SIZE: usize = 8 * 1024;
-
 /// The Read trait allows for reading bytes from a source.
 ///
 /// Implementors of the Read trait are sometimes called 'readers'.
