@@ -168,6 +168,14 @@ impl<R: Read> BufReaderRequire<R> {
     pub fn into_inner(self) -> R {
         self.reader
     }
+
+    /// Gets the number of bytes in the buffer.
+    ///
+    /// This is the amount of data that can be returned immediately, without reading from the
+    /// wrapped reader.
+    fn available(&self) -> usize {
+        self.end - self.start
+    }
 }
 
 #[cfg(feature = "std")]
@@ -189,7 +197,7 @@ impl<R: Read> Read for BufReaderRequire<R> {
 #[cfg(feature = "std")]
 impl<R: Read> BufRead for BufReaderRequire<R> {
     fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
-        if self.end - self.start == 0 {
+        if self.available() == 0 {
             self.start = 0;
             self.end = self.reader.read(&mut self.buffer[..])?;
         }
@@ -206,7 +214,7 @@ impl<R: Read> BufReadProgress for BufReaderRequire<R> {
     type BufReadError = Void;
 
     fn fill_progress(&mut self) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
-        let amount = self.end - self.start + 1;
+        let amount = self.available() + 1;
         self.require_bytes(amount)
     }
 }
@@ -216,7 +224,7 @@ impl<R: Read> BufReadRequire for BufReaderRequire<R> {
     type BufReadError = Void;
 
     fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
-        if self.end - self.start >= amount {
+        if self.available() >= amount {
             return Ok(&self.buffer[self.start..self.end]);
         }
         if amount > self.buffer.len() {
@@ -232,7 +240,7 @@ impl<R: Read> BufReadRequire for BufReaderRequire<R> {
             let capacity = self.buffer.capacity();
             self.buffer.resize(capacity, 0);
         }
-        while self.end - self.start < amount {
+        while self.available() < amount {
             match self.reader.read(&mut self.buffer[self.end..]) {
                 Ok(0) => return Err(BufError::End),
                 Ok(read_len) => self.end += read_len,
