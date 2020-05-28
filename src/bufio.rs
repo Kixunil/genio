@@ -3,8 +3,9 @@
 use Read;
 use Write;
 use error::BufError;
-use util::DEFAULT_BUF_SIZE;
 use ::void::Void;
+
+const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
 /// of reading.
