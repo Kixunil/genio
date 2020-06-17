@@ -1,7 +1,7 @@
 //! This module contains various extension traits.
 
-use Read;
 use error::ReadExactError;
+use Read;
 
 /// Result of successful read operation.
 pub enum ReadResult<'a> {
@@ -56,11 +56,15 @@ impl<'a> ReadResult<'a> {
 /// }
 pub trait ReadExt: Read {
     /// Reads from the reader and converts the result.
-    fn read_ext<'a, 'b>(&'a mut self, buf: &'b mut [u8]) -> Result<ReadResult<'b>, Self::ReadError>;
+    fn read_ext<'a, 'b>(&'a mut self, buf: &'b mut [u8])
+        -> Result<ReadResult<'b>, Self::ReadError>;
 }
 
 impl<R: Read + ?Sized> ReadExt for R {
-    fn read_ext<'a, 'b>(&'a mut self, buf: &'b mut [u8]) -> Result<ReadResult<'b>, Self::ReadError> {
+    fn read_ext<'a, 'b>(
+        &'a mut self,
+        buf: &'b mut [u8],
+    ) -> Result<ReadResult<'b>, Self::ReadError> {
         let len = self.read(buf)?;
         if len > 0 {
             Ok(ReadResult::Bytes(&mut buf[..len]))
@@ -69,4 +73,3 @@ impl<R: Read + ?Sized> ReadExt for R {
         }
     }
 }
-

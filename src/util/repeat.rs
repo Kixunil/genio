@@ -1,5 +1,5 @@
-use Read;
 use void::Void;
+use Read;
 
 /// Reader that infinitely repeats single byte.
 ///
@@ -10,7 +10,7 @@ pub struct Repeat {
 
 impl Read for Repeat {
     type ReadError = Void;
-    
+
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
         // TODO: use memset?
         let len = buf.len();

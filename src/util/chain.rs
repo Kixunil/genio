@@ -1,5 +1,5 @@
-use Read;
 use error::ChainError;
+use Read;
 
 /// Chains two readers.
 ///
@@ -27,19 +27,14 @@ impl<F: Read, S: Read> Read for Chain<F, S> {
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
         if self.first_finished {
-            self.second
-                .read(buf)
-                .map_err(ChainError::Second)
+            self.second.read(buf).map_err(ChainError::Second)
         } else {
-            self.first
-                .read(buf)
-                .map_err(ChainError::First)
-                .map(|l| {
-                    if l == 0 {
-                        self.first_finished = true;
-                    }
-                    l
-                })
+            self.first.read(buf).map_err(ChainError::First).map(|l| {
+                if l == 0 {
+                    self.first_finished = true;
+                }
+                l
+            })
         }
     }
 }
