@@ -1,5 +1,5 @@
+use crate::Read;
 use void::Void;
-use Read;
 
 /// Reader that infinitely repeats single byte.
 ///

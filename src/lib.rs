@@ -26,7 +26,7 @@ pub mod error;
 pub mod ext;
 pub mod util;
 
-use error::{ExtendError, ReadExactError};
+use crate::error::{ExtendError, ReadExactError};
 use util::Chain;
 use void::Void;
 
@@ -473,7 +473,7 @@ impl<'a> Read for &'a [u8] {
     type ReadError = Void;
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        use ::core::cmp::min;
+        use core::cmp::min;
 
         let amt = min(buf.len(), self.len());
         let (a, b) = self.split_at(amt);

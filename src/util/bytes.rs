@@ -1,4 +1,4 @@
-use Read;
+use crate::Read;
 
 /// Represents reader as iterator over bytes.
 ///

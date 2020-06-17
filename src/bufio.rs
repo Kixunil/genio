@@ -1,9 +1,9 @@
 //! Contains traits and impls for buffering.
 
-use ::void::Void;
-use error::BufError;
-use Read;
-use Write;
+use crate::error::BufError;
+use crate::Read;
+use crate::Write;
+use void::Void;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
 /// of reading.
@@ -252,7 +252,7 @@ unsafe impl<'a> BufWrite for &'a mut [u8] {
         if self.len() > 0 {
             Ok(*self)
         } else {
-            Err(::error::BufferOverflow)
+            Err(crate::error::BufferOverflow)
         }
     }
 

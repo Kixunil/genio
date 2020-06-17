@@ -1,5 +1,5 @@
+use crate::Write;
 use void::Void;
-use Write;
 
 /// Silently drops everything that is written to it.
 pub struct Sink;

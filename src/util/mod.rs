@@ -20,8 +20,8 @@ pub use self::write_trunc::WriteTrunc;
 
 const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
-use error::IOError;
-use {Read, Write};
+use crate::error::IOError;
+use crate::{Read, Write};
 
 /// Copies the entire contents of a reader into a writer.
 ///
@@ -39,7 +39,7 @@ pub fn copy<R: ?Sized + Read, W: ?Sized + Write>(
     reader: &mut R,
     writer: &mut W,
 ) -> Result<u64, IOError<R::ReadError, W::WriteError>> {
-    use ext::{ReadExt, ReadResult};
+    use crate::ext::{ReadExt, ReadResult};
 
     let mut buf = [0; DEFAULT_BUF_SIZE];
     let mut written = 0;

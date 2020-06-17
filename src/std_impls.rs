@@ -1,16 +1,16 @@
 //! This module contains glue `for std::io` and other `std` types.
 
-use bufio::BufWrite;
-use error::ExtendError;
+use crate::bufio::BufWrite;
+use crate::error::ExtendError;
+use crate::ExtendFromReader;
+use crate::ExtendFromReaderSlow;
+use crate::Read;
+use crate::ReadOverwrite;
+use crate::Write;
 use std::io;
 use std::io::{Empty, Sink};
 use std::vec::Vec;
 use void::Void;
-use ExtendFromReader;
-use ExtendFromReaderSlow;
-use Read;
-use ReadOverwrite;
-use Write;
 
 impl Write for Vec<u8> {
     type WriteError = Void;
@@ -36,7 +36,7 @@ impl Write for Vec<u8> {
 
 unsafe impl BufWrite for Vec<u8> {
     fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
-        use ::std::slice;
+        use std::slice;
 
         // Ensure there is a space for data
         self.reserve(1);

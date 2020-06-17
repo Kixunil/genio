@@ -1,5 +1,5 @@
-use error::ChainError;
-use Read;
+use crate::error::ChainError;
+use crate::Read;
 
 /// Chains two readers.
 ///

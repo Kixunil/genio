@@ -19,6 +19,7 @@ Because of limitations of `std::io::Error` type, `genio` provides `Read` and
 `Write` traits that allow implementors to choose their own type. This type can
 be better at expressing what kinds of error can happen.
 """
+edition = "2018"
 
 [dependencies]
 void = { version = "1", default-features = false }

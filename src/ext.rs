@@ -1,7 +1,7 @@
 //! This module contains various extension traits.
 
-use error::ReadExactError;
-use Read;
+use crate::error::ReadExactError;
+use crate::Read;
 
 /// Result of successful read operation.
 pub enum ReadResult<'a> {

@@ -1,5 +1,5 @@
+use crate::Read;
 use void::Void;
-use Read;
 
 /// This reader is empty - always returns 0 from read method.
 pub struct Empty;

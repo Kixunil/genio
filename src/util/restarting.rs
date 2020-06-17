@@ -1,6 +1,6 @@
-use error::{IntoIntrError, IntrError};
-use Read;
-use Write;
+use crate::error::{IntoIntrError, IntrError};
+use crate::Read;
+use crate::Write;
 
 /// Restarts all interrupted operations.
 ///

@@ -1,4 +1,4 @@
-use Write;
+use crate::Write;
 
 /// Truncates writing so that at most `n` bytes in total are written into the writer.
 ///
