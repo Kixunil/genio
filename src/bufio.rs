@@ -1,16 +1,16 @@
 //! Contains traits and impls for buffering.
 
-use Read;
-use Write;
-use error::BufError;
-use ::void::Void;
+use crate::error::BufError;
+use crate::Read;
+use crate::Write;
+use void::Void;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
 /// of reading.
 pub trait BufRead: Read {
     /// Fills the internal buffer of this object, returning the buffer contents.
     /// This function is a lower-level call. It needs to be paired with the consume() method to
-    /// function properly. 
+    /// function properly.
     fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError>;
     /// Tells this buffer that `amount` bytes have been consumed from the buffer, so they should no
     /// longer be returned in calls to `read`.
@@ -63,13 +63,19 @@ pub trait BufReadRequire: BufRead {
     type BufReadError;
 
     /// Fill the buffer until at least `amount` bytes are available.
-    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>>;
+    fn require_bytes(
+        &mut self,
+        amount: usize,
+    ) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>>;
 }
 
 impl<'a> BufReadRequire for &'a [u8] {
     type BufReadError = Void;
 
-    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+    fn require_bytes(
+        &mut self,
+        amount: usize,
+    ) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
         if amount <= self.len() {
             Ok(*self)
         } else {
@@ -113,7 +119,7 @@ pub unsafe trait BufWriteRequire: BufWrite {
     type BufWriteError;
 
     /// Require buffer with minimum `size` bytes. It is an error to return smaller buffer but
-    /// `unsafe` code can't rely on it. 
+    /// `unsafe` code can't rely on it.
     fn require_buffer(&mut self, size: usize) -> Result<*mut [u8], Self::BufWriteError>;
 }
 
@@ -198,9 +204,7 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
 
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         // This is correct because it gets slice to initialized data
-        let buf = unsafe {
-            &mut (*self.buffer.as_raw_buf())[0..self.cursor]
-        };
+        let buf = unsafe { &mut (*self.buffer.as_raw_buf())[0..self.cursor] };
 
         self.cursor = 0;
 
@@ -248,7 +252,7 @@ unsafe impl<'a> BufWrite for &'a mut [u8] {
         if self.len() > 0 {
             Ok(*self)
         } else {
-            Err(::error::BufferOverflow)
+            Err(crate::error::BufferOverflow)
         }
     }
 

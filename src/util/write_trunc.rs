@@ -1,4 +1,4 @@
-use Write;
+use crate::Write;
 
 /// Truncates writing so that at most `n` bytes in total are written into the writer.
 ///
@@ -38,7 +38,9 @@ impl<W: Write> Write for WriteTrunc<W> {
         self.remaining -= buf.len() as u64;
 
         if buf.len() > 0 {
-            self.writer.write(buf).map(|written| if self.remaining > 0 { written } else { len })
+            self.writer
+                .write(buf)
+                .map(|written| if self.remaining > 0 { written } else { len })
         } else {
             Ok(len)
         }

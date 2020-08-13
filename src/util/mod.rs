@@ -1,27 +1,27 @@
 //! This module contains various generic utilities related to IO.
 
+mod bytes;
 mod chain;
-mod write_trunc;
-mod restarting;
-mod sink;
 mod empty;
 mod repeat;
 mod repeat_bytes;
-mod bytes;
+mod restarting;
+mod sink;
+mod write_trunc;
 
+pub use self::bytes::Bytes;
 pub use self::chain::Chain;
-pub use self::write_trunc::WriteTrunc;
-pub use self::restarting::Restarting;
-pub use self::sink::Sink;
 pub use self::empty::Empty;
 pub use self::repeat::Repeat;
 pub use self::repeat_bytes::RepeatBytes;
-pub use self::bytes::Bytes;
+pub use self::restarting::Restarting;
+pub use self::sink::Sink;
+pub use self::write_trunc::WriteTrunc;
 
 const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
-use {Read, Write};
-use error::IOError;
+use crate::error::IOError;
+use crate::{Read, Write};
 
 /// Copies the entire contents of a reader into a writer.
 ///
@@ -35,8 +35,11 @@ use error::IOError;
 /// This function will return an error immediately if any call to `read` or write returns an error.
 /// **Warning:** This function does not restart calls if they are interrupted by EINTR. Use
 /// `genio::util::Restarting` to restart calls.
-pub fn copy<R: ?Sized + Read, W: ?Sized + Write>(reader: &mut R, writer: &mut W) -> Result<u64, IOError<R::ReadError, W::WriteError>> {
-    use ext::{ReadExt, ReadResult};
+pub fn copy<R: ?Sized + Read, W: ?Sized + Write>(
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<u64, IOError<R::ReadError, W::WriteError>> {
+    use crate::ext::{ReadExt, ReadResult};
 
     let mut buf = [0; DEFAULT_BUF_SIZE];
     let mut written = 0;
@@ -47,4 +50,3 @@ pub fn copy<R: ?Sized + Read, W: ?Sized + Write>(reader: &mut R, writer: &mut W)
     }
     Ok(written)
 }
-

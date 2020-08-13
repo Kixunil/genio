@@ -1,4 +1,4 @@
-use Read;
+use crate::Read;
 
 /// Represents reader as iterator over bytes.
 ///
@@ -10,9 +10,7 @@ pub struct Bytes<R> {
 impl<R: Read> Bytes<R> {
     /// Creates the iterator.
     pub fn new(reader: R) -> Self {
-        Bytes {
-            reader: reader,
-        }
+        Bytes { reader: reader }
     }
 }
 
@@ -26,5 +24,5 @@ impl<R: Read> Iterator for Bytes<R> {
             Ok(_) => Some(Ok(buf[0])),
             Err(e) => Some(Err(e)),
         }
-    } 
+    }
 }

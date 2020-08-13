@@ -1,6 +1,6 @@
-use Read;
-use Write;
-use error::{IntrError, IntoIntrError};
+use crate::error::{IntoIntrError, IntrError};
+use crate::Read;
+use crate::Write;
 
 /// Restarts all interrupted operations.
 ///
@@ -8,7 +8,7 @@ use error::{IntrError, IntoIntrError};
 /// will be restarted when wrapped in this type.
 ///
 /// The error types indicate that interrupted error case has been handled.
-pub struct Restarting<T> (T);
+pub struct Restarting<T>(T);
 
 impl<T> Restarting<T> {
     /// Creates restarting IO.
@@ -21,7 +21,9 @@ impl<T> Restarting<T> {
         self.0
     }
 
-    fn restart_call<S, E: IntoIntrError, F: FnMut() -> Result<S, E>>(mut f: F) -> Result<S, E::NonIntr> {
+    fn restart_call<S, E: IntoIntrError, F: FnMut() -> Result<S, E>>(
+        mut f: F,
+    ) -> Result<S, E::NonIntr> {
         loop {
             match f().map_err(IntoIntrError::into_intr_error) {
                 Ok(success) => return Ok(success),
@@ -32,24 +34,33 @@ impl<T> Restarting<T> {
     }
 }
 
-impl<R> Read for Restarting<R> where R: Read, R::ReadError: IntoIntrError {
+impl<R> Read for Restarting<R>
+where
+    R: Read,
+    R::ReadError: IntoIntrError,
+{
     type ReadError = <<R as Read>::ReadError as IntoIntrError>::NonIntr;
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        Self::restart_call(|| self.0.read(buf))    
+        Self::restart_call(|| self.0.read(buf))
     }
 }
 
-impl<W> Write for Restarting<W> where W: Write, W::WriteError: IntoIntrError, W::FlushError: IntoIntrError {
+impl<W> Write for Restarting<W>
+where
+    W: Write,
+    W::WriteError: IntoIntrError,
+    W::FlushError: IntoIntrError,
+{
     type WriteError = <<W as Write>::WriteError as IntoIntrError>::NonIntr;
     type FlushError = <<W as Write>::FlushError as IntoIntrError>::NonIntr;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
-        Self::restart_call(|| self.0.write(buf))    
+        Self::restart_call(|| self.0.write(buf))
     }
 
     fn flush(&mut self) -> Result<(), Self::FlushError> {
-        Self::restart_call(|| self.0.flush())    
+        Self::restart_call(|| self.0.flush())
     }
 
     fn size_hint(&mut self, bytes: usize) {
