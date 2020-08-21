@@ -1,8 +1,8 @@
 //! Error types and various operations on them.
 
-use void::Void;
-use void;
 use ::core::fmt;
+use void;
+use void::Void;
 
 /// Specifies an error that happened during I/O operation. This enables one to compose read and
 /// write errors into single type.
@@ -18,7 +18,11 @@ pub enum IOError<R, W> {
 
 impl<R, W> IOError<R, W> {
     /// Merges the variants into common type.
-    pub fn merge<E>(e: IOError<R, W>) -> E where R: Into<E>, W: Into<E> {
+    pub fn merge<E>(e: IOError<R, W>) -> E
+    where
+        R: Into<E>,
+        W: Into<E>,
+    {
         match e {
             IOError::Read(e) => e.into(),
             IOError::Write(e) => e.into(),
@@ -74,7 +78,11 @@ pub enum ChainError<F, S> {
 impl<F, S> ChainError<F, S> {
     /// If the two errors can be converted to same type, they can be easily merged by this method.
     /// This simply performs the conversion.
-    pub fn merge<E>(self) -> E where F: Into<E>, S: Into<E> {
+    pub fn merge<E>(self) -> E
+    where
+        F: Into<E>,
+        S: Into<E>,
+    {
         match self {
             ChainError::First(f) => f.into(),
             ChainError::Second(s) => s.into(),

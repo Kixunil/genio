@@ -1,16 +1,18 @@
 //! Contains traits and impls for buffering.
 
-use Read;
-use Write;
-use error::BufError;
-use ::void::Void;
+use crate::error::BufError;
+use crate::Read;
+use crate::Write;
+use void::Void;
+
+const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
 /// of reading.
 pub trait BufRead: Read {
     /// Fills the internal buffer of this object, returning the buffer contents.
     /// This function is a lower-level call. It needs to be paired with the consume() method to
-    /// function properly. 
+    /// function properly.
     fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError>;
     /// Tells this buffer that `amount` bytes have been consumed from the buffer, so they should no
     /// longer be returned in calls to `read`.
@@ -63,13 +65,19 @@ pub trait BufReadRequire: BufRead {
     type BufReadError;
 
     /// Fill the buffer until at least `amount` bytes are available.
-    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>>;
+    fn require_bytes(
+        &mut self,
+        amount: usize,
+    ) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>>;
 }
 
 impl<'a> BufReadRequire for &'a [u8] {
     type BufReadError = Void;
 
-    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+    fn require_bytes(
+        &mut self,
+        amount: usize,
+    ) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
         if amount <= self.len() {
             Ok(*self)
         } else {
@@ -113,7 +121,7 @@ pub unsafe trait BufWriteRequire: BufWrite {
     type BufWriteError;
 
     /// Require buffer with minimum `size` bytes. It is an error to return smaller buffer but
-    /// `unsafe` code can't rely on it. 
+    /// `unsafe` code can't rely on it.
     fn require_buffer(&mut self, size: usize) -> Result<*mut [u8], Self::BufWriteError>;
 }
 
@@ -134,6 +142,118 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> AsRawBuf for T {
 
     fn len(&self) -> usize {
         self.as_ref().len()
+    }
+}
+
+/// Wrapper that provides buffering for a reader.
+#[cfg(feature = "std")]
+pub struct BufReaderRequire<R> {
+    reader: R,
+    buffer: ::std::vec::Vec<u8>,
+    start: usize,
+    end: usize,
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufReaderRequire<R> {
+    /// Creates buffered reader.
+    pub fn new(reader: R) -> Self {
+        let mut buffer = ::std::vec::Vec::new();
+        buffer.resize(DEFAULT_BUF_SIZE, 0);
+        BufReaderRequire {
+            reader,
+            buffer,
+            start: 0,
+            end: 0,
+        }
+    }
+
+    /// Unwraps inner reader.
+    ///
+    /// Any data in the internal buffer is lost.
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
+
+    /// Gets the number of bytes in the buffer.
+    ///
+    /// This is the amount of data that can be returned immediately, without reading from the
+    /// wrapped reader.
+    fn available(&self) -> usize {
+        self.end - self.start
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> Read for BufReaderRequire<R> {
+    type ReadError = R::ReadError;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+        let n = {
+            let data = self.fill_buf()?;
+            let n = data.len().max(buf.len());
+            buf[..n].copy_from_slice(&data[..n]);
+            n
+        };
+        self.consume(n);
+        Ok(n)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufRead for BufReaderRequire<R> {
+    fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
+        if self.available() == 0 {
+            self.start = 0;
+            self.end = self.reader.read(&mut self.buffer[..])?;
+        }
+        Ok(&self.buffer[self.start..self.end])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.start = self.start.saturating_add(amount).max(self.buffer.len());
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufReadProgress for BufReaderRequire<R> {
+    type BufReadError = Void;
+
+    fn fill_progress(&mut self) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+        let amount = self.available() + 1;
+        self.require_bytes(amount)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: Read> BufReadRequire for BufReaderRequire<R> {
+    type BufReadError = Void;
+
+    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
+        if self.available() >= amount {
+            return Ok(&self.buffer[self.start..self.end]);
+        }
+        if amount > self.buffer.len() {
+            let len = self.buffer.len();
+            self.buffer.reserve(amount - len);
+            let new_capacity = self.buffer.capacity();
+            self.buffer.resize(new_capacity, 0);
+        }
+        if amount > self.buffer.len() - self.start {
+            self.buffer.drain(..self.start);
+            self.end -= self.start;
+            self.start = 0;
+            let capacity = self.buffer.capacity();
+            self.buffer.resize(capacity, 0);
+        }
+        while self.available() < amount {
+            match self.reader.read(&mut self.buffer[self.end..]) {
+                Ok(0) => return Err(BufError::End),
+                Ok(read_len) => self.end += read_len,
+                Err(error) => return Err(BufError::OtherErr(error)),
+            }
+        }
+        Ok(&self.buffer[self.start..self.end])
     }
 }
 
@@ -198,9 +318,7 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
 
     fn flush(&mut self) -> Result<(), Self::FlushError> {
         // This is correct because it gets slice to initialized data
-        let buf = unsafe {
-            &mut (*self.buffer.as_raw_buf())[0..self.cursor]
-        };
+        let buf = unsafe { &mut (*self.buffer.as_raw_buf())[0..self.cursor] };
 
         self.cursor = 0;
 
@@ -248,7 +366,7 @@ unsafe impl<'a> BufWrite for &'a mut [u8] {
         if self.len() > 0 {
             Ok(*self)
         } else {
-            Err(::error::BufferOverflow)
+            Err(crate::error::BufferOverflow)
         }
     }
 

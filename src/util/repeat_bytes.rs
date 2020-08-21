@@ -1,4 +1,4 @@
-use Read;
+use crate::Read;
 use void::Void;
 
 /// Reader repeating a sequence of bytes infinitely.
@@ -9,9 +9,9 @@ pub struct RepeatBytes<B> {
 
 impl<B: AsRef<[u8]>> Read for RepeatBytes<B> {
     type ReadError = Void;
-    
+
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        use ::core::cmp::min;
+        use core::cmp::min;
         let len = buf.len();
         let bytes = self.bytes.as_ref();
 
@@ -22,7 +22,10 @@ impl<B: AsRef<[u8]>> Read for RepeatBytes<B> {
             self.offset = 0
         }
 
-        let buf = { let tmp = &mut buf[amt..]; tmp };
+        let buf = {
+            let tmp = &mut buf[amt..];
+            tmp
+        };
 
         for chunk in buf.chunks_mut(bytes.len()) {
             if chunk.len() != bytes.len() {
