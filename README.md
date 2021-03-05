@@ -6,6 +6,14 @@ A type safe, low level replacement for `std::io`.
 Supports `no_std` for embedded development, just disable cargo feature
 `std`.
 
+Important
+---------
+
+The development of this crate stalled for a while but there's an effort to revive and **redesign** it.
+Do **not** expect the API to stay like this, the hange will be big.
+Especially regarding uninitialized buffers which are **unsound** in the current version.
+I'll be happy to receive [feedback on the redesign](https://github.com/Kixunil/genio/issues/23)!
+
 Motivation
 ----------
 
