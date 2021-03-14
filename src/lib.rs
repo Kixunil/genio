@@ -13,11 +13,14 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 #[cfg(feature = "byteorder")]
 extern crate byteorder;
 
-extern crate void;
-
+#[cfg(feature = "alloc")]
+mod alloc_impls;
 #[cfg(feature = "std")]
 pub mod std_impls;
 
@@ -26,14 +29,21 @@ pub mod error;
 pub mod ext;
 pub mod util;
 
+pub extern crate uninit_buffer as buffer;
+/// Re-exported for convenience.
+pub use buffer::{Buffer, OutBuf, OutBytes};
+
+use buffer::possibly_uninit::slice::BorrowOutSlice;
+
 use crate::{
     error::{ExtendError, ReadExactError},
     util::Chain,
-    void::Void,
 };
 
 #[cfg(feature = "byteorder")]
 use byteorder::ByteOrder;
+
+pub use buffer::{init, BufInit};
 
 /// The Read trait allows for reading bytes from a source.
 ///
@@ -52,8 +62,18 @@ use byteorder::ByteOrder;
 pub trait Read {
     /// Value of this type is returned when `read()` fails.
     ///
-    /// It's highly recommended to use `Void` from `void` crate if `read()` can never fail.
+    /// It's highly recommended to use [`core::convert::Infallible`] if `read()` can never fail.
     type ReadError;
+
+    /// Marker for buffers this reader accepts.
+    ///
+    /// This should be almost always [`buffer::init::Uninit`]. 
+    /// Exceptions:
+    ///
+    /// * Bridges to old APIs such as `std::io::Read` need to use [`buffer::init::Init`]
+    /// * [`TrackBuffer`] has to use [`buffer::init::Dynamic`] to track initializedness and unify
+    ///   the types.
+    type BufInit: buffer::BufInit;
 
     /// Pull some bytes from this source into the specified buffer, returning how many bytes were
     /// read.
@@ -72,36 +92,25 @@ pub trait Read {
     ///
     /// 2. The buffer specified was 0 bytes in length.
     ///
-    /// No guarantees are provided about the contents of buf when this function is called,
-    /// implementations cannot rely on any property of the contents of buf being true. It is
-    /// recommended that implementations only write data to buf instead of reading its contents.
-    ///
     /// # Errors
     ///
     /// If this function encounters any form of I/O or other error, an error
     /// variant will be returned. If an error is returned then it must be
     /// guaranteed that no bytes were read.
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError>;
+    fn read(&mut self, buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError>;
 
     /// Read the exact number of bytes required to fill `buf`.
     ///
     /// This function reads as many bytes as necessary to completely fill the specified buffer `buf`.
-    ///
-    /// No guarantees are provided about the contents of `buf` when this function is called,
-    /// implementations cannot rely on any property of the contents of `buf` being true. It is
-    /// recommended that implementations only write data to `buf` instead of reading its contents.
-    fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), ReadExactError<Self::ReadError>> {
-        if self.available_bytes(buf.len()) {
-            while !buf.is_empty() {
-                let read_bytes = self.read(buf)?;
+    fn read_exact(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<(), ReadExactError<Self::ReadError>> {
+        if self.available_bytes(buf.remaining()) {
+            while !buf.is_full() {
+                let read_bytes = self.read(buf.reborrow())?;
                 if read_bytes == 0 {
                     return Err(ReadExactError::UnexpectedEnd);
                 }
-
-                let tmp = buf;
-                buf = &mut tmp[read_bytes..];
             }
-            return Ok(());
+            Ok(())
         } else {
             Err(ReadExactError::UnexpectedEnd)
         }
@@ -109,13 +118,29 @@ pub trait Read {
 
     /// Hints whether there are at least `at_least` bytes available.
     ///
-    /// This function should return true if it can't determine exact amount. That is also default.
+    /// This function should return true if it can't determine the exact amount.
+    /// That is also the default.
+    /// The method should be cheap to call. It's mainly intended for buffered readers.
     ///
     /// # Errors
     ///
     /// It is an error to return false even if there are more bytes available.
+    #[inline]
     fn available_bytes(&self, _at_least: usize) -> bool {
         true
+    }
+
+    /// An expensive way to get the number of available bytes.
+    ///
+    /// The method returns `Some(num_available_bytes)` if it succeeded in finding out how many
+    /// bytes are available, `None` otherwise. This computation can be as expensive as a `read`
+    /// call. (If `read` involves syscall, this is allowed to perform syscall too.)
+    ///
+    /// This can be used in optimizations to allocate the whole required buffer upfront.
+    /// If the number of bytes is larger than `usize::MAX` this should return `usize::MAX`.
+    #[inline]
+    fn retrieve_available_bytes(&self) -> Option<usize> {
+        None
     }
 
     /// Chains another reader after `self`. When self ends (returns Ok(0)), the other reader will
@@ -136,7 +161,7 @@ pub trait Read {
         container: &mut T,
     ) -> Result<usize, ExtendError<Self::ReadError, T::ExtendError>>
     where
-        Self: ReadOverwrite,
+        Self: Sized,
     {
         let mut total_bytes = 0;
 
@@ -146,6 +171,19 @@ pub trait Read {
                 return Ok(total_bytes);
             }
             total_bytes += bytes;
+        }
+    }
+
+    /// Creates a reader that converts all its errors to some other type.
+    ///
+    /// This is useful mainly when you have multiple readers of different error type and you need to
+    /// unify their error types e.g. to store them in a collection of trait objects. You can use a
+    /// conversion function that converts the errors to a common type so that all the error types
+    /// become the same.
+    fn map_read_err<E, F: FnMut(Self::ReadError) -> E>(self, f: F) -> MapReadErr<Self, F> where Self: Sized {
+        MapReadErr {
+            reader: self,
+            map_fn: f,
         }
     }
 
@@ -162,107 +200,118 @@ pub trait Read {
     /// Reads an unsigned 16 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
     fn read_u16<BO: ByteOrder>(&mut self) -> Result<u16, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 2];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_u16(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 2], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_u16(buf.written()))
     }
 
     /// Reads an unsigned 32 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
     fn read_u32<BO: ByteOrder>(&mut self) -> Result<u32, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 4];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_u32(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 4], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_u32(buf.written()))
     }
 
     /// Reads an unsigned 64 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
     fn read_u64<BO: ByteOrder>(&mut self) -> Result<u64, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 8];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_u64(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 8], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_u64(buf.written()))
     }
 
     /// Reads an signed 16 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
     fn read_i16<BO: ByteOrder>(&mut self) -> Result<i16, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 2];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_i16(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 2], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_i16(buf.written()))
     }
 
     /// Reads an signed 32 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
     fn read_i32<BO: ByteOrder>(&mut self) -> Result<i32, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 4];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_i32(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 4], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_i32(buf.written()))
     }
 
     /// Reads an signed 64 bit integer from the underlying reader.
     #[cfg(feature = "byteorder")]
     fn read_i64<BO: ByteOrder>(&mut self) -> Result<i64, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 8];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_i64(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 8], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_i64(buf.written()))
     }
 
     /// Reads a IEEE754 single-precision (4 bytes) floating point number from the underlying
     /// reader.
     #[cfg(feature = "byteorder")]
     fn read_f32<BO: ByteOrder>(&mut self) -> Result<f32, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 4];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_f32(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 4], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_f32(buf.written()))
     }
 
     /// Reads a IEEE754 double-precision (8 bytes) floating point number from the underlying
     /// reader.
     #[cfg(feature = "byteorder")]
     fn read_f64<BO: ByteOrder>(&mut self) -> Result<f64, ReadExactError<Self::ReadError>> {
-        let mut buf = [0; 8];
-        self.read_exact(&mut buf)?;
-        Ok(BO::read_f64(&buf))
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 8], Self::BufInit>();
+        self.read_exact(buf.as_out())?;
+        Ok(BO::read_f64(buf.written()))
     }
 }
+
+/*
+pub struct TrackBuffer<R: Read>(R);
+
+impl<R: Read> Read for TrackBuffer<R> {
+    type Error = R::Error;
+    type BufInit = buffer::init::Dynamic;
+
+    fn read(&mut self, buf: &mut Buffer<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
+        self.0.read(buf.maybe_zeroed())
+    }
+}
+*/
 
 /// Some types can be extended by reading from reader. The most well-known is probably `Vec`. It
 /// is possible to implement it manually, but it may be more efficient if the type implements this
 /// trait directly. In case of `Vec`, it means reading directly into uninitialized part of reserved
-/// memory in case of the fast version of this trait.
-pub trait ExtendFromReaderSlow {
+/// memory.
+pub trait ExtendFromReader {
     /// This type is returned when extending fails. For example, if not enough memory could be
     /// allocated. All other errors should be passed directly from reader.
     type ExtendError;
 
     /// This method performs extending from reader - that means calling `read()` just once.
-    fn extend_from_reader_slow<R: Read + ?Sized>(
+    fn extend_from_reader<R: Read + ?Sized>(
         &mut self,
         reader: &mut R,
     ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>>;
-}
 
-/// This trait is similar to slow one. The difference is that thanks to reader guaranteeing
-/// correctness, this one can use uninitialized buffer.
-pub trait ExtendFromReader: ExtendFromReaderSlow {
-    /// This method performs extending from reader - that means calling `read()` just once.
-    fn extend_from_reader<R: Read + ReadOverwrite + ?Sized>(
+    /// Extends `self` with the contents of whole reader.
+    ///
+    /// This calls `extend_from_reader` until it returns 0.
+    /// The method returns the number of bytes read.
+    /// If the amount exceeds `usize::MAX` the return value is `usize::MAX`.
+    fn extend_from_reader_to_end<R: Read + ?Sized>(
         &mut self,
         reader: &mut R,
-    ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>>;
-}
+    ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>> {
+        let mut total_bytes = 0;
 
-/// This marker trait declares that the Read trait is implemented correctly,
-/// that means:
-///
-/// 1. implementation of `read()` and `read_exact()` doesn't read from provided buffer.
-/// 2. if `read()` returns `Ok(n)`, then each of first `n` bytes was overwritten.
-/// 3. if `read_exact()` returns `Ok(())` then each byte of buffer was overwritten.
-///
-/// Breaking this should not cause huge problems since untrusted input should be checked anyway but
-/// it might leak internal state of the application, containing secret data like private keys.
-/// Think of the Hartbleed bug.
-pub unsafe trait ReadOverwrite: Read {}
+        loop {
+            let bytes = self.extend_from_reader(reader)?;
+            if bytes == 0 {
+                return Ok(total_bytes);
+            }
+            total_bytes = total_bytes.saturating_add(bytes);
+        }
+    }
+}
 
 /// A trait for objects which are byte-oriented sinks.
 ///
@@ -320,9 +369,16 @@ pub trait Write {
     fn flush(&mut self) -> Result<(), Self::FlushError>;
 
     /// Attempts to write an entire buffer into this `Write`.
-    fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Self::WriteError> {
+    fn write_all(&mut self, mut buf: &[u8]) -> Result<(), error::WriteAllError<Self::WriteError>> {
+        let total_len = buf.len();
         while !buf.is_empty() {
-            let len = self.write(buf)?;
+            let len = self
+                .write(buf)
+                .map_err(|error| error::WriteAllError {
+                    bytes_written: total_len - buf.len(),
+                    bytes_missing: buf.len(),
+                    error,
+                })?;
             buf = &buf[len..];
         }
         Ok(())
@@ -341,7 +397,7 @@ pub trait Write {
     /// The function is mandatory, as a lint to incentivize implementors to implement it, if
     /// applicable. Note that if you implement this function, you must also implement
     /// `uses_size_hint`.
-    fn size_hint(&mut self, bytes: usize);
+    fn size_hint(&mut self, min_bytes: usize, max_bytes: Option<usize>);
 
     /// Reports to the caller whether size hint is actually used. This can prevent costly
     /// computation of size hint that would be thrown away.
@@ -442,8 +498,9 @@ pub trait Write {
 
 impl<'a, R: Read + ?Sized> Read for &'a mut R {
     type ReadError = R::ReadError;
+    type BufInit = R::BufInit;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+    fn read(&mut self, buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
         (*self).read(buf)
     }
 }
@@ -460,8 +517,8 @@ impl<'a, W: Write + ?Sized> Write for &'a mut W {
         (*self).flush()
     }
 
-    fn size_hint(&mut self, bytes: usize) {
-        (*self).size_hint(bytes)
+    fn size_hint(&mut self, min_bytes: usize, max_bytes: Option<usize>) {
+        (*self).size_hint(min_bytes, max_bytes)
     }
 
     /// Reports to the caller whether size hint is actually used. This can prevent costly
@@ -472,24 +529,17 @@ impl<'a, W: Write + ?Sized> Write for &'a mut W {
 }
 
 impl<'a> Read for &'a [u8] {
-    type ReadError = Void;
+    type ReadError = core::convert::Infallible;
+    type BufInit = init::Uninit;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        use core::cmp::min;
-
-        let amt = min(buf.len(), self.len());
-        let (a, b) = self.split_at(amt);
-
-        // First check if the amount of bytes we want to read is small:
-        // `copy_from_slice` will generally expand to a call to `memcpy`, and
-        // for a single byte the overhead is significant.
-        if amt == 1 {
-            buf[0] = a[0];
-        } else {
-            buf[..amt].copy_from_slice(a);
+    fn read(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
+        if self.is_empty() {
+            return Ok(0);
         }
 
-        *self = b;
+        let amt = buf.write_slice_min(self);
+
+        *self = &self[amt..];
         Ok(amt)
     }
 
@@ -500,7 +550,7 @@ impl<'a> Read for &'a [u8] {
 
 impl<'a> Write for &'a mut [u8] {
     type WriteError = error::BufferOverflow;
-    type FlushError = Void;
+    type FlushError = core::convert::Infallible;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
         if buf.len() <= self.len() {
@@ -517,5 +567,24 @@ impl<'a> Write for &'a mut [u8] {
         Ok(())
     }
 
-    fn size_hint(&mut self, _bytes: usize) {}
+    fn size_hint(&mut self, _min_bytes: usize, _max_bytes: Option<usize>) {}
+}
+
+/// Reader that maps all its errors using the provided function.
+///
+/// This is returned from [`Read::map_read_err`] method. Check its documentation for more details.
+pub struct MapReadErr<R, F> {
+    reader: R,
+    map_fn: F,
+}
+
+impl<R, F, E> Read for MapReadErr<R, F> where R: Read, F: FnMut(R::ReadError) -> E {
+    type ReadError = E;
+    type BufInit = R::BufInit;
+
+    fn read(&mut self, buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
+        self.reader.read(buf).map_err(&mut self.map_fn)
+    }
+
+    // TODO: forward other methods
 }

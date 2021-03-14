@@ -1,5 +1,4 @@
-use crate::Read;
-use void::Void;
+use crate::{Read, OutBuf};
 
 /// Reader repeating a sequence of bytes infinitely.
 pub struct RepeatBytes<B> {
@@ -8,33 +7,26 @@ pub struct RepeatBytes<B> {
 }
 
 impl<B: AsRef<[u8]>> Read for RepeatBytes<B> {
-    type ReadError = Void;
+    type ReadError = core::convert::Infallible;
+    type BufInit = buffer::init::Uninit;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        use core::cmp::min;
-        let len = buf.len();
+    fn read(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
+        let len = buf.remaining();
         let bytes = self.bytes.as_ref();
 
-        let amt = min(buf.len(), bytes.len() - self.offset);
-        buf[..amt].copy_from_slice(&bytes[self.offset..(self.offset)]);
-        self.offset += amt;
-        if self.offset == bytes.len() {
-            self.offset = 0
-        }
-
-        let buf = {
-            let tmp = &mut buf[amt..];
-            tmp
-        };
-
-        for chunk in buf.chunks_mut(bytes.len()) {
-            if chunk.len() != bytes.len() {
-                chunk.copy_from_slice(&bytes[..bytes.len()]);
-                self.offset = chunk.len();
-            } else {
-                chunk.copy_from_slice(bytes);
+        while !buf.is_full() {
+            let copied = buf.write_slice_min(&bytes[self.offset..]);
+            self.offset += copied;
+            if self.offset == bytes.len() {
+                self.offset = 0
             }
         }
+
         Ok(len)
+    }
+
+    #[inline]
+    fn retrieve_available_bytes(&self) -> Option<usize> {
+        Some(usize::MAX)
     }
 }

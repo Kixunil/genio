@@ -1,0 +1,14 @@
+[package]
+name = "uninit_buffer"
+version = "0.1.0"
+authors = ["Martin Habovstiak <martin.habovstiak@gmail.com>"]
+edition = "2018"
+
+[features]
+gat_unstable = []
+const_generics = []
+std = ["alloc"]
+alloc = ["possibly_uninit/alloc"]
+
+[dependencies]
+possibly_uninit = { version = "0.1", path = "../../possibly_uninit" }

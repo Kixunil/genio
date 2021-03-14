@@ -22,6 +22,7 @@ const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
 use crate::error::IOError;
 use crate::{Read, Write};
+use core::mem::MaybeUninit;
 
 /// Copies the entire contents of a reader into a writer.
 ///
@@ -41,12 +42,13 @@ pub fn copy<R: ?Sized + Read, W: ?Sized + Write>(
 ) -> Result<u64, IOError<R::ReadError, W::WriteError>> {
     use crate::ext::{ReadExt, ReadResult};
 
-    let mut buf = [0; DEFAULT_BUF_SIZE];
+    let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; DEFAULT_BUF_SIZE], R::BufInit>();
     let mut written = 0;
 
-    while let ReadResult::Bytes(b) = reader.read_ext(&mut buf).map_err(IOError::Read)? {
-        writer.write_all(b).map_err(IOError::Write)?;
+    while let ReadResult::Bytes(b) = reader.read_ext(buf.as_out()).map_err(IOError::Read)? {
+        writer.write_all(b).map_err(|error| IOError::Write(error.into_inner()))?;
         written += b.len() as u64;
+        buf.reset();
     }
     Ok(written)
 }

@@ -22,12 +22,10 @@ be better at expressing what kinds of error can happen.
 edition = "2018"
 
 [dependencies]
-void = { version = "1", default-features = false }
 byteorder = { version = "1", optional = true }
+uninit_buffer = { path = "uninit_buffer", default-features = false }
 
 [features]
 default = ["std"]
-std = ["void/std"]
-
-# Deprecated, kept for backward compatibility
-use_std = ["std"]
+std = ["alloc", "uninit_buffer/std"]
+alloc = ["uninit_buffer/alloc"]

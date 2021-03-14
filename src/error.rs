@@ -1,8 +1,7 @@
 //! Error types and various operations on them.
 
-use ::core::fmt;
-use void;
-use void::Void;
+use core::fmt;
+use core::convert::Infallible;
 
 /// Specifies an error that happened during I/O operation. This enables one to compose read and
 /// write errors into single type.
@@ -134,9 +133,9 @@ impl<E> IntoIntrError for IntrError<E> {
     }
 }
 
-impl<T> From<Void> for IntrError<T> {
-    fn from(e: Void) -> Self {
-        void::unreachable(e)
+impl<T> From<Infallible> for IntrError<T> {
+    fn from(e: Infallible) -> Self {
+        match e {}
     }
 }
 
@@ -178,5 +177,33 @@ pub struct BufferOverflow;
 impl fmt::Display for BufferOverflow {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "provided buffer was too small")
+    }
+}
+
+/// Error returned from `write_all` when writing fails.
+///
+/// This error contains the information about the state of writing and the underlying cause. This
+/// way writing can be restarted and the error message is more detailed.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct WriteAllError<T> {
+    /// Number of bytes that were written to the writer before it errored.
+    pub bytes_written: usize,
+    /// How many more bytes should have been written.
+    pub bytes_missing: usize,
+    /// The cause of error.
+    pub error: T,
+}
+
+impl<T> WriteAllError<T> {
+    /// Discards the information about the state of writing and converts the type.
+    pub fn into_inner(self) -> T {
+        self.error
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for WriteAllError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "couldn't write {} bytes, writing failed after {} bytes", self.bytes_written + self.bytes_missing, self.bytes_written)
     }
 }

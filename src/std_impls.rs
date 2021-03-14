@@ -1,135 +1,17 @@
 //! This module contains glue `for std::io` and other `std` types.
 
-use crate::bufio::BufWrite;
-use crate::error::ExtendError;
-use crate::ExtendFromReader;
-use crate::ExtendFromReaderSlow;
 use crate::Read;
-use crate::ReadOverwrite;
 use crate::Write;
+use crate::OutBuf;
 use std::io;
 use std::io::{Empty, Sink};
-use std::vec::Vec;
-use void::Void;
-
-impl Write for Vec<u8> {
-    type WriteError = Void;
-    type FlushError = Void;
-
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
-        self.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> Result<(), Self::FlushError> {
-        Ok(())
-    }
-
-    fn size_hint(&mut self, bytes: usize) {
-        self.reserve(bytes)
-    }
-
-    fn uses_size_hint(&self) -> bool {
-        true
-    }
-}
-
-unsafe impl BufWrite for Vec<u8> {
-    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
-        use std::slice;
-
-        // Ensure there is a space for data
-        self.reserve(1);
-        unsafe {
-            Ok(&mut slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity())[self.len()..])
-        }
-    }
-
-    unsafe fn submit_buffer(&mut self, size: usize) {
-        let new_len = self.len() + size;
-        self.set_len(new_len)
-    }
-}
-
-impl ExtendFromReaderSlow for Vec<u8> {
-    // We could return OOM, but there is no `try_alloc`, so we have to panic.
-    // That means `Vec` can never fail.
-    type ExtendError = Void;
-
-    fn extend_from_reader_slow<R: Read + ?Sized>(
-        &mut self,
-        reader: &mut R,
-    ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>> {
-        let begin = self.len();
-        self.resize(begin + 1024, 0);
-        match reader.read(&mut self[begin..]) {
-            Ok(bytes) => {
-                // Check that returned value is correct.
-                // This could be omitted, since `ReadOverwrite` is `unsafe` but this is
-                // quite cheap check and avoids serious problems.
-                assert!(bytes <= self.capacity() - begin);
-                self.resize(begin + bytes, 0);
-                Ok(bytes)
-            }
-            Err(e) => {
-                // We have to reset len to previous value if error happens.
-                self.resize(begin, 0);
-                Err(ExtendError::ReadErr(e))
-            }
-        }
-    }
-}
-
-// Efficient implementation
-impl ExtendFromReader for Vec<u8> {
-    fn extend_from_reader<R: Read + ReadOverwrite + ?Sized>(
-        &mut self,
-        reader: &mut R,
-    ) -> Result<usize, ExtendError<R::ReadError, Self::ExtendError>> {
-        // Prepare space
-        self.reserve(1024);
-
-        // This code is "unsafe because we use `.set_len()` to improve performance.
-        // It also relies on `ReadOverwrite`.
-        unsafe {
-            // `std::Vec` doesn't guarantee that capacity will be greater after call to `reserve()`
-            // so we don't rely on it.
-            // "Vec does not guarantee any particular growth strategy when reallocating when full,
-            // nor when reserve is called." - documentation
-            if self.capacity() > self.len() {
-                let begin = self.len();
-                // This is correct in the sense it won't cause UB but the `Vec` will contain
-                // uninitialized bytes. Those bytes will be overwritten by reader thanks to
-                // `ReadOverwrite`
-                let capacity = self.capacity();
-                self.set_len(capacity);
-                match reader.read(&mut self[begin..]) {
-                    Ok(bytes) => {
-                        // Check that returned value is correct.
-                        // This could be omitted, since `ReadOverwrite` is `unsafe` but this is
-                        // quite cheap check and avoids serious problems.
-                        assert!(bytes <= capacity - begin);
-                        self.set_len(begin + bytes);
-                        Ok(bytes)
-                    }
-                    Err(e) => {
-                        // We have to reset len to previous value if error happens.
-                        self.set_len(begin);
-                        Err(ExtendError::ReadErr(e))
-                    }
-                }
-            } else {
-                // Fallback for cases where `reserve` reserves nothing.
-                self.extend_from_reader_slow(reader)
-            }
-        }
-    }
-}
+use core::convert::Infallible;
+use buffer::Buffer;
 
 // Same as our Sink.
 impl Write for Sink {
-    type WriteError = Void;
-    type FlushError = Void;
+    type WriteError = Infallible;
+    type FlushError = Infallible;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
         Ok(buf.len())
@@ -139,14 +21,15 @@ impl Write for Sink {
         Ok(())
     }
 
-    fn size_hint(&mut self, _bytes: usize) {}
+    fn size_hint(&mut self, _min_bytes: usize, _max_bytes: Option<usize>) {}
 }
 
 // Same as our Empty.
 impl Read for Empty {
-    type ReadError = Void;
+    type ReadError = Infallible;
+    type BufInit = buffer::init::Uninit;
 
-    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+    fn read(&mut self, _buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
         Ok(0)
     }
 }
@@ -168,7 +51,8 @@ impl<R: Read> StdRead<R> {
 
 impl<E: Into<io::Error>, R: Read<ReadError = E>> io::Read for StdRead<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.0.read(buf).map_err(Into::into)
+        let mut buffer: Buffer<&mut [u8], R::BufInit> = Buffer::new_from_init(buf);
+        self.0.read(buffer.as_out()).map_err(Into::into)
     }
 }
 
@@ -222,7 +106,8 @@ impl<
 
 impl<E: Into<io::Error>, T: Read<ReadError = E>> io::Read for StdIo<T> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.0.read(buf).map_err(Into::into)
+        let mut buffer: Buffer<&mut [u8], T::BufInit> = Buffer::new_from_init(buf);
+        self.0.read(buffer.as_out()).map_err(Into::into)
     }
 }
 
@@ -255,9 +140,12 @@ impl<R: io::Read> GenioRead<R> {
 
 impl<R: io::Read> Read for GenioRead<R> {
     type ReadError = io::Error;
+    type BufInit = buffer::init::Init;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.0.read(buf)
+    fn read(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<usize, io::Error> {
+        let amount = self.0.read(&mut buf.bytes_mut())?;
+        buf.advance(amount);
+        Ok(amount)
     }
 }
 
@@ -288,7 +176,7 @@ impl<W: io::Write> Write for GenioWrite<W> {
         self.0.flush()
     }
 
-    fn size_hint(&mut self, _bytes: usize) {}
+    fn size_hint(&mut self, _min_bytes: usize, _max_bytes: Option<usize>) {}
 }
 
 /// Wrapper providing `genio::Read + genio::Write` traits for `std::io::Read + std::io::Write` types.
@@ -308,9 +196,12 @@ impl<T: io::Read + io::Write> GenioIo<T> {
 
 impl<T: io::Read> Read for GenioIo<T> {
     type ReadError = io::Error;
+    type BufInit = buffer::init::Init;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.0.read(buf)
+    fn read(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<usize, io::Error> {
+        let amount = self.0.read(&mut buf.bytes_mut())?;
+        buf.advance(amount);
+        Ok(amount)
     }
 }
 
@@ -326,5 +217,5 @@ impl<T: io::Write> Write for GenioIo<T> {
         self.0.flush()
     }
 
-    fn size_hint(&mut self, _bytes: usize) {}
+    fn size_hint(&mut self, _min_bytes: usize, _max_bytes: Option<usize>) {}
 }

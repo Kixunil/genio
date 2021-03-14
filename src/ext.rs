@@ -1,7 +1,7 @@
 //! This module contains various extension traits.
 
 use crate::error::ReadExactError;
-use crate::Read;
+use crate::{Read, OutBuf};
 
 /// Result of successful read operation.
 pub enum ReadResult<'a> {
@@ -56,20 +56,22 @@ impl<'a> ReadResult<'a> {
 /// }
 pub trait ReadExt: Read {
     /// Reads from the reader and converts the result.
-    fn read_ext<'a, 'b>(&'a mut self, buf: &'b mut [u8])
-        -> Result<ReadResult<'b>, Self::ReadError>;
+    fn read_ext<'a>(&mut self, buf: OutBuf<'a, Self::BufInit>)
+        -> Result<ReadResult<'a>, Self::ReadError>;
 }
 
 impl<R: Read + ?Sized> ReadExt for R {
-    fn read_ext<'a, 'b>(
-        &'a mut self,
-        buf: &'b mut [u8],
-    ) -> Result<ReadResult<'b>, Self::ReadError> {
-        let len = self.read(buf)?;
-        if len > 0 {
-            Ok(ReadResult::Bytes(&mut buf[..len]))
-        } else {
+    fn read_ext<'a>(
+        &mut self,
+        buf: OutBuf<'a, Self::BufInit>,
+    ) -> Result<ReadResult<'a>, Self::ReadError> {
+        let (slice, res) = buf.scoped(|buf| self.read(buf));
+        let amount = res?;
+        debug_assert_eq!(amount, slice.len());
+        if slice.is_empty() {
             Ok(ReadResult::End)
+        } else {
+            Ok(ReadResult::Bytes(slice))
         }
     }
 }
