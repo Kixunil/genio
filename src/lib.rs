@@ -498,6 +498,15 @@ impl<'a> Read for &'a [u8] {
     }
 }
 
+impl<'a> Read for &'a mut [u8] {
+    type ReadError = Void;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+        let mut immutable : &[u8] = self;
+        immutable.read(buf)
+    }
+}
+
 impl<'a> Write for &'a mut [u8] {
     type WriteError = error::BufferOverflow;
     type FlushError = Void;
