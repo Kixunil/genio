@@ -21,6 +21,8 @@ extern crate void;
 #[cfg(feature = "std")]
 pub mod std_impls;
 
+use core::mem::take;
+
 pub mod bufio;
 pub mod error;
 pub mod ext;
@@ -502,8 +504,10 @@ impl<'a> Read for &'a mut [u8] {
     type ReadError = Void;
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        let mut immutable : &[u8] = self;
-        immutable.read(buf)
+        let mut immutable: &[u8] = self;
+        let amt = immutable.read(buf)?;
+        *self = &mut take(self)[amt..];
+        Ok(amt)
     }
 }
 
