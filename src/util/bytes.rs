@@ -1,4 +1,5 @@
 use crate::Read;
+use core::mem::MaybeUninit;
 
 /// Represents reader as iterator over bytes.
 ///
@@ -18,11 +19,11 @@ impl<R: Read> Iterator for Bytes<R> {
     type Item = Result<u8, R::ReadError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut buf = [0];
-        match self.reader.read(&mut buf) {
-            Ok(0) => None,
-            Ok(_) => Some(Ok(buf[0])),
-            Err(e) => Some(Err(e)),
+        let mut buf = buffer::new_maybe_init::<[MaybeUninit<u8>; 1], R::BufInit>();
+        let result = self.reader.read(buf.as_out());
+        match (result, buf.written().first()) {
+            (Err(e), _) => Some(Err(e)),
+            (Ok(_), byte) => byte.copied().map(Ok),
         }
     }
 }

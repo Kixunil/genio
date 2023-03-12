@@ -1,12 +1,11 @@
 use crate::Write;
-use void::Void;
 
 /// Silently drops everything that is written to it.
 pub struct Sink;
 
 impl Write for Sink {
-    type WriteError = Void;
-    type FlushError = Void;
+    type WriteError = core::convert::Infallible;
+    type FlushError = core::convert::Infallible;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::WriteError> {
         Ok(buf.len())
@@ -16,5 +15,5 @@ impl Write for Sink {
         Ok(())
     }
 
-    fn size_hint(&mut self, _bytes: usize) {}
+    fn size_hint(&mut self, _min_bytes: usize, _max_bytes: Option<usize>) {}
 }

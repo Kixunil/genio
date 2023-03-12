@@ -1,11 +1,10 @@
 //! Contains traits and impls for buffering.
 
 use crate::error::BufError;
-use crate::Read;
-use crate::Write;
-use void::Void;
-
-const DEFAULT_BUF_SIZE: usize = 8 * 1024;
+use crate::{Read, Write, OutBytes, BorrowOutSlice};
+use core::convert::Infallible;
+#[cfg(feature = "alloc")]
+pub use crate::alloc_impls::BufReaderRequire;
 
 /// A `BufRead` is a type of `Read`er which has an internal buffer, allowing it to perform extra ways
 /// of reading.
@@ -72,7 +71,7 @@ pub trait BufReadRequire: BufRead {
 }
 
 impl<'a> BufReadRequire for &'a [u8] {
-    type BufReadError = Void;
+    type BufReadError = Infallible;
 
     fn require_bytes(
         &mut self,
@@ -89,15 +88,13 @@ impl<'a> BufReadRequire for &'a [u8] {
 /// When writing, it might be better to serialize directly into a buffer. This trait allows such
 /// situation.
 ///
-/// This triat is `unsafe` because it optimizes buffers to not require zeroing.
+/// This trait is `unsafe` because it optimizes buffers to not require zeroing.
 pub unsafe trait BufWrite: Write {
     /// Requests buffer for writing.
-    /// The buffer is represented as a pointer because it may contain uninitialized memory - only
-    /// writing is allowed. The pointer must not outlive Self!
     ///
     /// The returned slice must always be non-empty. If non-emty slice can't be returned, `Err` must
     /// be returned instead. If the underlying writer is full, it has to flush the buffer.
-    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError>;
+    fn request_buffer(&mut self) -> Result<&mut OutBytes, Self::WriteError>;
 
     /// Tells the buf writer that `size` bytes were written into buffer.
     ///
@@ -106,11 +103,7 @@ pub unsafe trait BufWrite: Write {
 
     /// Writes single byte. Since this is buffered, the operation will be efficient.
     fn write_byte(&mut self, byte: u8) -> Result<(), Self::WriteError> {
-        unsafe {
-            (*self.request_buffer()?)[0] = byte;
-            self.submit_buffer(1);
-        }
-        Ok(())
+        self.write(&[byte]).map(drop)
     }
 }
 
@@ -122,162 +115,32 @@ pub unsafe trait BufWriteRequire: BufWrite {
 
     /// Require buffer with minimum `size` bytes. It is an error to return smaller buffer but
     /// `unsafe` code can't rely on it.
-    fn require_buffer(&mut self, size: usize) -> Result<*mut [u8], Self::BufWriteError>;
-}
-
-/// Represents type that can serve as (possibly uninitialized) buffer
-pub trait AsRawBuf {
-    /// Returns a pointer to the buffer. It may point to uninitialized data. The pointer must not
-    /// outlive the buffer.
-    fn as_raw_buf(&mut self) -> *mut [u8];
-
-    /// Returns the length of the buffer.
-    fn len(&self) -> usize;
-}
-
-impl<T: AsRef<[u8]> + AsMut<[u8]>> AsRawBuf for T {
-    fn as_raw_buf(&mut self) -> *mut [u8] {
-        self.as_mut()
-    }
-
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-}
-
-/// Wrapper that provides buffering for a reader.
-#[cfg(feature = "std")]
-pub struct BufReaderRequire<R> {
-    reader: R,
-    buffer: ::std::vec::Vec<u8>,
-    start: usize,
-    end: usize,
-}
-
-#[cfg(feature = "std")]
-impl<R: Read> BufReaderRequire<R> {
-    /// Creates buffered reader.
-    pub fn new(reader: R) -> Self {
-        let mut buffer = ::std::vec::Vec::new();
-        buffer.resize(DEFAULT_BUF_SIZE, 0);
-        BufReaderRequire {
-            reader,
-            buffer,
-            start: 0,
-            end: 0,
-        }
-    }
-
-    /// Unwraps inner reader.
-    ///
-    /// Any data in the internal buffer is lost.
-    pub fn into_inner(self) -> R {
-        self.reader
-    }
-
-    /// Gets the number of bytes in the buffer.
-    ///
-    /// This is the amount of data that can be returned immediately, without reading from the
-    /// wrapped reader.
-    fn available(&self) -> usize {
-        self.end - self.start
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: Read> Read for BufReaderRequire<R> {
-    type ReadError = R::ReadError;
-
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        let n = {
-            let data = self.fill_buf()?;
-            let n = data.len().max(buf.len());
-            buf[..n].copy_from_slice(&data[..n]);
-            n
-        };
-        self.consume(n);
-        Ok(n)
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: Read> BufRead for BufReaderRequire<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Self::ReadError> {
-        if self.available() == 0 {
-            self.start = 0;
-            self.end = self.reader.read(&mut self.buffer[..])?;
-        }
-        Ok(&self.buffer[self.start..self.end])
-    }
-
-    fn consume(&mut self, amount: usize) {
-        self.start = self.start.saturating_add(amount).max(self.buffer.len());
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: Read> BufReadProgress for BufReaderRequire<R> {
-    type BufReadError = Void;
-
-    fn fill_progress(&mut self) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
-        let amount = self.available() + 1;
-        self.require_bytes(amount)
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: Read> BufReadRequire for BufReaderRequire<R> {
-    type BufReadError = Void;
-
-    fn require_bytes(&mut self, amount: usize) -> Result<&[u8], BufError<Self::BufReadError, Self::ReadError>> {
-        if self.available() >= amount {
-            return Ok(&self.buffer[self.start..self.end]);
-        }
-        if amount > self.buffer.len() {
-            let len = self.buffer.len();
-            self.buffer.reserve(amount - len);
-            let new_capacity = self.buffer.capacity();
-            self.buffer.resize(new_capacity, 0);
-        }
-        if amount > self.buffer.len() - self.start {
-            self.buffer.drain(..self.start);
-            self.end -= self.start;
-            self.start = 0;
-            let capacity = self.buffer.capacity();
-            self.buffer.resize(capacity, 0);
-        }
-        while self.available() < amount {
-            match self.reader.read(&mut self.buffer[self.end..]) {
-                Ok(0) => return Err(BufError::End),
-                Ok(read_len) => self.end += read_len,
-                Err(error) => return Err(BufError::OtherErr(error)),
-            }
-        }
-        Ok(&self.buffer[self.start..self.end])
-    }
+    fn require_buffer(&mut self, size: usize) -> Result<&mut OutBytes, Self::BufWriteError>;
 }
 
 /// Wrapper that provides buffering for a writer.
-pub struct BufWriter<W, B> {
+pub struct BufWriter<W: Write, Storage: BorrowOutSlice<u8>> {
     writer: W,
-    buffer: B,
-    cursor: usize,
+    buffer: crate::Buffer<Storage, crate::buffer::init::Uninit>,
+    write_pos: usize,
 }
 
-impl<W: Write, B: AsRawBuf> BufWriter<W, B> {
+impl<W: Write, B: BorrowOutSlice<u8>> BufWriter<W, B> {
     /// Creates buffered writer.
     ///
     /// Warning: buffer must be non-zero! Otherwise the program may panic!
-    pub fn new(writer: W, buffer: B) -> Self {
+    pub fn new(writer: W, storage: B) -> Self {
+        assert!(!storage.borrow_uninit_slice().is_empty());
+
         BufWriter {
             writer,
-            buffer,
-            cursor: 0,
+            buffer: crate::Buffer::new(storage),
+            write_pos: 0,
         }
     }
 
     fn flush_if_full(&mut self) -> Result<(), <Self as Write>::WriteError> {
-        if self.cursor == self.buffer.len() {
+        if self.buffer.as_out().is_full() {
             self.flush()
         } else {
             Ok(())
@@ -285,48 +148,36 @@ impl<W: Write, B: AsRawBuf> BufWriter<W, B> {
     }
 }
 
-impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
+impl<W: Write, B: BorrowOutSlice<u8>> Write for BufWriter<W, B> {
     type WriteError = W::WriteError;
     type FlushError = W::WriteError;
 
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::WriteError> {
-        let buf_len = self.buffer.len();
-        if self.cursor == buf_len {
+        if self.buffer.as_out().is_full() {
             self.flush()?;
-            if data.len() >= buf_len {
+            if data.len() >= self.buffer.capacity() {
                 return self.writer.write(&data);
             }
         }
 
-        // This is correct because it only writes to the buffer
-        unsafe {
-            // Get the ref to uninitialized buffer
-            let buf = &mut (*self.buffer.as_raw_buf())[self.cursor..];
-
-            // Calculate how much bytes to copy (doesn't read uninitialized).
-            let to_copy = ::core::cmp::min(buf_len, data.len());
-
-            // Copy data. Overwrites uninitialized.
-            buf[0..to_copy].copy_from_slice(&data[0..to_copy]);
-
-            // Updates cursor by exactly the amount of bytes overwritten.
-            self.cursor += to_copy;
-
-            Ok(to_copy)
-        }
+        Ok(self.buffer.as_out().write_slice_min(data))
     }
 
     fn flush(&mut self) -> Result<(), Self::FlushError> {
-        // This is correct because it gets slice to initialized data
-        let buf = unsafe { &mut (*self.buffer.as_raw_buf())[0..self.cursor] };
-
-        self.cursor = 0;
-
-        self.writer.write_all(buf)
+        let mut to_flush = &self.buffer.written()[self.write_pos..];
+        while !to_flush.is_empty() {
+            self.write_pos += self.writer.write(to_flush)?;
+            to_flush = &self.buffer.written()[self.write_pos..];
+        }
+        self.write_pos = 0;
+        self.buffer.reset();
+        Ok(())
     }
 
-    fn size_hint(&mut self, bytes: usize) {
-        self.writer.size_hint(bytes)
+    fn size_hint(&mut self, min_bytes: usize, max_bytes: Option<usize>) {
+        let min = min_bytes.saturating_add(self.buffer.written().len() - self.write_pos);
+        let max = max_bytes.map(|max| max.saturating_add(self.buffer.written().len() - self.write_pos));
+        self.writer.size_hint(min, max);
     }
 
     fn uses_size_hint(&self) -> bool {
@@ -334,25 +185,21 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
     }
 }
 
-unsafe impl<W: Write, B: AsRawBuf> BufWrite for BufWriter<W, B> {
-    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
+unsafe impl<W: Write, B: BorrowOutSlice<u8>> BufWrite for BufWriter<W, B> {
+    fn request_buffer(&mut self) -> Result<&mut OutBytes, Self::WriteError> {
         self.flush_if_full()?;
 
         // This simply returns pointer to the uninitialized buffer
-        unsafe {
-            let slice = &mut (*self.buffer.as_raw_buf())[self.cursor..];
-            assert!(slice.len() > 0);
-            Ok(slice)
-        }
+        Ok(self.buffer.out_bytes())
     }
 
     unsafe fn submit_buffer(&mut self, size: usize) {
-        self.cursor += size;
+        self.buffer.as_out().advance_unchecked(size)
     }
 }
 
 unsafe impl<'a, W: BufWrite> BufWrite for &'a mut W {
-    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
+    fn request_buffer(&mut self) -> Result<&mut OutBytes, Self::WriteError> {
         (*self).request_buffer()
     }
 
@@ -362,16 +209,16 @@ unsafe impl<'a, W: BufWrite> BufWrite for &'a mut W {
 }
 
 unsafe impl<'a> BufWrite for &'a mut [u8] {
-    fn request_buffer(&mut self) -> Result<*mut [u8], Self::WriteError> {
-        if self.len() > 0 {
-            Ok(*self)
-        } else {
+    fn request_buffer(&mut self) -> Result<&mut OutBytes, Self::WriteError> {
+        if self.is_empty() {
             Err(crate::error::BufferOverflow)
+        } else {
+            Ok(self.borrow_out_slice())
         }
     }
 
     unsafe fn submit_buffer(&mut self, size: usize) {
-        let tmp = ::core::mem::replace(self, &mut []);
+        let tmp = core::mem::replace(self, &mut []);
         *self = &mut tmp[size..];
     }
 }

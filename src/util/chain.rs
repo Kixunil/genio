@@ -1,5 +1,6 @@
 use crate::error::ChainError;
-use crate::Read;
+use crate::{Read, OutBuf};
+use buffer::Combine;
 
 /// Chains two readers.
 ///
@@ -22,14 +23,15 @@ impl<F: Read, S: Read> Chain<F, S> {
     }
 }
 
-impl<F: Read, S: Read> Read for Chain<F, S> {
+impl<F: Read, S: Read> Read for Chain<F, S> where F::BufInit: Combine<S::BufInit> {
     type ReadError = ChainError<F::ReadError, S::ReadError>;
+    type BufInit = <F::BufInit as Combine<S::BufInit>>::Combined;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
+    fn read(&mut self, buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
         if self.first_finished {
-            self.second.read(buf).map_err(ChainError::Second)
+            self.second.read(buf.uncombine_right::<F::BufInit, S::BufInit>()).map_err(ChainError::Second)
         } else {
-            self.first.read(buf).map_err(ChainError::First).map(|l| {
+            self.first.read(buf.uncombine_left::<F::BufInit, S::BufInit>()).map_err(ChainError::First).map(|l| {
                 if l == 0 {
                     self.first_finished = true;
                 }

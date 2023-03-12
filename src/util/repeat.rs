@@ -1,7 +1,6 @@
-use crate::Read;
-use void::Void;
+use crate::{Read, OutBuf};
 
-/// Reader that infinitely repeats single byte.
+/// Reader that infinitely repeats a single byte.
 ///
 /// It will never fail and never return 0.
 pub struct Repeat {
@@ -9,14 +8,19 @@ pub struct Repeat {
 }
 
 impl Read for Repeat {
-    type ReadError = Void;
+    type ReadError = core::convert::Infallible;
+    type BufInit = buffer::init::Uninit;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        // TODO: use memset?
-        let len = buf.len();
-        for b in buf {
-            *b = self.byte;
+    fn read(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
+        let len = buf.remaining();
+        while !buf.is_full() {
+            buf.write_byte(self.byte);
         }
         Ok(len)
+    }
+
+    #[inline]
+    fn retrieve_available_bytes(&self) -> Option<usize> {
+        Some(usize::MAX)
     }
 }

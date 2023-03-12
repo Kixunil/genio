@@ -1,4 +1,5 @@
 use crate::Write;
+use crate::error::WriteAllError;
 
 /// Truncates writing so that at most `n` bytes in total are written into the writer.
 ///
@@ -46,7 +47,7 @@ impl<W: Write> Write for WriteTrunc<W> {
         }
     }
 
-    fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Self::WriteError> {
+    fn write_all(&mut self, mut buf: &[u8]) -> Result<(), WriteAllError<Self::WriteError>> {
         let len = buf.len();
         if len as u64 > self.remaining {
             let tmp = &buf[..(self.remaining as usize)];
@@ -66,12 +67,19 @@ impl<W: Write> Write for WriteTrunc<W> {
         self.writer.flush()
     }
 
-    fn size_hint(&mut self, bytes: usize) {
-        if bytes as u64 > self.remaining {
-            self.writer.size_hint(self.remaining as usize)
+    fn size_hint(&mut self, min_bytes: usize, max_bytes: Option<usize>) {
+        let (min_bytes, max_bytes) = if min_bytes as u64 > self.remaining {
+            (self.remaining as usize, Some(self.remaining as usize))
+        } else if self.remaining < usize::MAX as u64 {
+            let max_bytes = max_bytes
+                .unwrap_or(self.remaining as usize)
+                .min(self.remaining as usize);
+            (min_bytes, Some(max_bytes))
         } else {
-            self.writer.size_hint(bytes)
-        }
+            (min_bytes, max_bytes)
+        };
+
+        self.writer.size_hint(min_bytes, max_bytes)
     }
 
     fn uses_size_hint(&self) -> bool {

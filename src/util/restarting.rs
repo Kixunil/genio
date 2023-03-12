@@ -1,6 +1,5 @@
 use crate::error::{IntoIntrError, IntrError};
-use crate::Read;
-use crate::Write;
+use crate::{Read, Write, OutBuf};
 
 /// Restarts all interrupted operations.
 ///
@@ -40,9 +39,10 @@ where
     R::ReadError: IntoIntrError,
 {
     type ReadError = <<R as Read>::ReadError as IntoIntrError>::NonIntr;
+    type BufInit = R::BufInit;
 
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
-        Self::restart_call(|| self.0.read(buf))
+    fn read(&mut self, mut buf: OutBuf<'_, Self::BufInit>) -> Result<usize, Self::ReadError> {
+        Self::restart_call(|| self.0.read(buf.reborrow()))
     }
 }
 
@@ -63,8 +63,8 @@ where
         Self::restart_call(|| self.0.flush())
     }
 
-    fn size_hint(&mut self, bytes: usize) {
-        self.0.size_hint(bytes);
+    fn size_hint(&mut self, min_bytes: usize, max_bytes: Option<usize>) {
+        self.0.size_hint(min_bytes, max_bytes);
     }
 
     fn uses_size_hint(&self) -> bool {
