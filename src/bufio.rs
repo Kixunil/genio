@@ -299,9 +299,9 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
         }
 
         // This is correct because it only writes to the buffer
-        unsafe {
+        
             // Get the ref to uninitialized buffer
-            let buf = &mut (*self.buffer.as_raw_buf())[self.cursor..];
+            let buf = unsafe {&mut (*self.buffer.as_raw_buf())[self.cursor..]};
 
             // Calculate how much bytes to copy (doesn't read uninitialized).
             let to_copy = ::core::cmp::min(buf_len, data.len());
@@ -313,7 +313,7 @@ impl<W: Write, B: AsRawBuf> Write for BufWriter<W, B> {
             self.cursor += to_copy;
 
             Ok(to_copy)
-        }
+        
     }
 
     fn flush(&mut self) -> Result<(), Self::FlushError> {
